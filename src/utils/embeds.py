@@ -1,8 +1,11 @@
 """Discord embed builders for announcements"""
 
 import discord
+import random
 from datetime import datetime
 from enum import Enum
+
+from .personality import FenrirPersonality
 
 
 class ServiceType(Enum):
@@ -33,27 +36,76 @@ class ServiceType(Enum):
 class EmbedAssets:
     """URLs for embed images and GIFs"""
     
-    # Using twemoji CDN (Twitter emoji images) - guaranteed to work with Discord
-    # Downtime / Alerts
-    DOWNTIME_GIF = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDd2MzBhOGw3a3Q0YnV1aXhiNm9nbGx0cWV4dHU3cDQ3Ymt6NXJuaiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/xTiTnrliW65rlwud8I/giphy.gif"
-    DOWNTIME_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f6a8.png"  # 🚨 Red siren
+    # ═══════════════════════════════════════════════════════════════
+    # GIF Collections - Random selection for variety
+    # ═══════════════════════════════════════════════════════════════
     
-    # Restored / Success
-    RESTORED_GIF = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnB1dXBjNnNhdjJ2OHdjcTJxbGRyODM0NzNub3VicHRyMWw0OXp0ZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3ohzdIuqJoo8QdKlnW/giphy.gif"
-    RESTORED_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/2705.png"  # ✅ Green check
+    # 🔴 DOWNTIME GIFs - Server crashes, errors, chaos vibes
+    DOWNTIME_GIFS = [
+        "https://media.giphy.com/media/ZGBQhaRTHyWtRVn1Xx/giphy.gif",  # Server room fire
+        "https://media.giphy.com/media/HUkOv6BNWc1HO/giphy.gif",        # This is fine (dog in fire)
+        "https://media.giphy.com/media/3o6wrebnKWmvx4ZBio/giphy.gif",   # Glitch effect
+        "https://media.giphy.com/media/l1KVaj5UcbHwrBMqI/giphy.gif",    # Computer smash
+        "https://media.giphy.com/media/xTiTnrliW65rlwud8I/giphy.gif",   # Alert sirens
+        "https://media.giphy.com/media/3oEjI8vagntG7EDxgQ/giphy.gif",   # Matrix glitch
+        "https://media.giphy.com/media/QMHoU66sBXqqLqYvGO/giphy.gif",   # Windows error
+        "https://media.giphy.com/media/j3DxBrKsR7zxB2dKKe/giphy.gif",   # Explosion
+        "https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif",   # Server rack panic
+        "https://media.giphy.com/media/hv5AEBpH3ZyNoRnABG/giphy.gif",   # 404 glitch
+    ]
     
-    # Scheduled / Warning
-    SCHEDULED_GIF = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2Q4eGF6NmQ1eGRzanVwbGUxcnR0c3EzeWJocHptcHZ5aml2NWRvdyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l0HlBO7eyXzSZkJri/giphy.gif"
-    SCHEDULED_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f4c5.png"  # 📅 Calendar
+    # 🟢 RESTORED GIFs - Success, celebration, back online vibes
+    RESTORED_GIFS = [
+        "https://media.giphy.com/media/3ohzdIuqJoo8QdKlnW/giphy.gif",   # Thumbs up kid
+        "https://media.giphy.com/media/a0h7sAqON67nO/giphy.gif",        # Success kid
+        "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",    # Celebration
+        "https://media.giphy.com/media/xT0GqssRweIhlz209i/giphy.gif",   # Success confetti
+        "https://media.giphy.com/media/XreQmk7ETCak0/giphy.gif",        # Clapping
+        "https://media.giphy.com/media/l0MYC0LajbaPoEADu/giphy.gif",    # We did it!
+        "https://media.giphy.com/media/artj92V8o75VPL7AeQ/giphy.gif",   # Gg ez
+        "https://media.giphy.com/media/fdyZ3qI0GVZC0/giphy.gif",        # Minions cheering
+        "https://media.giphy.com/media/3o6fJ1BM7R2EBRDnxK/giphy.gif",   # Green light
+        "https://media.giphy.com/media/l3V0j3ytFyGHqiV7W/giphy.gif",    # Mission complete
+    ]
     
-    # Status / Info
-    STATUS_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/2139.png"  # ℹ️ Info
+    # 🟡 SCHEDULED GIFs - Maintenance, planning, work in progress
+    SCHEDULED_GIFS = [
+        "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif",    # Clock countdown
+        "https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif",   # Calendar flip
+        "https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif",        # Typing cat
+        "https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif",   # Work in progress
+        "https://media.giphy.com/media/xTiTnxpQ3ghPiB2Hp6/giphy.gif",   # Construction
+        "https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif",   # Gears turning
+        "https://media.giphy.com/media/l4FGuhL4U2WyjdkaY/giphy.gif",    # Wrench tools
+        "https://media.giphy.com/media/SVCSsoKU5v6ZJLk07n/giphy.gif",   # Loading
+        "https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif",   # Hacker coding
+        "https://media.giphy.com/media/Dh5q0sShxgp13DwrvG/giphy.gif",   # Maintenance bot
+    ]
     
-    # Dashboard
-    DASHBOARD_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f4ca.png"  # 📊 Chart
+    # ═══════════════════════════════════════════════════════════════
+    # Thumbnails (top-right icons) - Twemoji for reliability
+    # ═══════════════════════════════════════════════════════════════
+    DOWNTIME_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f6a8.png"   # 🚨
+    RESTORED_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/2705.png"    # ✅
+    SCHEDULED_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f4c5.png"  # 📅
+    STATUS_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/2139.png"      # ℹ️
+    DASHBOARD_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f4ca.png"  # 📊
+    FENRIR_ICON = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f43a.png"      # 🐺
     
-    # Fenrir branding - Wolf icon
-    FENRIR_ICON = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f43a.png"  # 🐺 Wolf
+    @classmethod
+    def random_downtime_gif(cls) -> str:
+        """Get a random downtime GIF"""
+        return random.choice(cls.DOWNTIME_GIFS)
+    
+    @classmethod
+    def random_restored_gif(cls) -> str:
+        """Get a random restored GIF"""
+        return random.choice(cls.RESTORED_GIFS)
+    
+    @classmethod
+    def random_scheduled_gif(cls) -> str:
+        """Get a random scheduled GIF"""
+        return random.choice(cls.SCHEDULED_GIFS)
 
 
 def progress_bar(percentage: float, length: int = 10) -> str:
@@ -93,13 +145,19 @@ class DowntimeEmbed:
         service_type: ServiceType = ServiceType.OTHER
     ) -> discord.Embed:
         """Create a downtime start announcement embed"""
+        personality = FenrirPersonality()
+        greeting = personality.get_greeting()
+        mood_emoji = personality.get_mood_emoji()
+        quip = personality.get_footer_quip()
+        
         embed = discord.Embed(
-            title="⚠️ DOWNTIME ALERT",
+            title=f"{mood_emoji} DOWNTIME ALERT",
             description=(
                 f"```ansi\n"
                 f"\u001b[1;31m█▀▀ █▀▀ █▀█ █░█ █ █▀▀ █▀▀   █▀▄ █▀█ █░█░█ █▄░█\n"
                 f"\u001b[1;31m▄▄█ ██▄ █▀▄ ▀▄▀ █ █▄▄ ██▄   █▄▀ █▄█ ▀▄▀▄▀ █░▀█\n"
                 f"```\n"
+                f"*{greeting}*\n\n"
                 f"**{service}** is going offline for maintenance"
             ),
             color=0xFF4444,  # Bright red
@@ -130,11 +188,11 @@ class DowntimeEmbed:
         
         # Visual elements
         embed.set_thumbnail(url=EmbedAssets.DOWNTIME_THUMB)
-        embed.set_image(url=EmbedAssets.DOWNTIME_GIF)
+        embed.set_image(url=EmbedAssets.random_downtime_gif())
         
-        # Footer with author
+        # Footer with author and mood quip
         embed.set_footer(
-            text=f"🐺 Fenrir • Announced by {author.display_name}",
+            text=f"🐺 Fenrir {quip} • Announced by {author.display_name}",
             icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
         )
         
@@ -147,13 +205,19 @@ class DowntimeEmbed:
         service_type: ServiceType = ServiceType.OTHER
     ) -> discord.Embed:
         """Create a service restored announcement embed"""
+        personality = FenrirPersonality()
+        restored_msg = personality.get_restored_message()
+        mood_emoji = personality.get_mood_emoji()
+        quip = personality.get_footer_quip()
+        
         embed = discord.Embed(
-            title="✅ SERVICE RESTORED",
+            title=f"{mood_emoji} SERVICE RESTORED",
             description=(
                 f"```ansi\n"
                 f"\u001b[1;32m█▀▀ █▀▀ █▀█ █░█ █ █▀▀ █▀▀   █░█ █▀█\n"
                 f"\u001b[1;32m▄▄█ ██▄ █▀▄ ▀▄▀ █ █▄▄ ██▄   █▄█ █▀▀\n"
                 f"```\n"
+                f"*{restored_msg}*\n\n"
                 f"**{service}** is back online and operational! 🎉"
             ),
             color=0x44FF44,  # Bright green
@@ -173,10 +237,10 @@ class DowntimeEmbed:
         
         # Visual elements
         embed.set_thumbnail(url=EmbedAssets.RESTORED_THUMB)
-        embed.set_image(url=EmbedAssets.RESTORED_GIF)
+        embed.set_image(url=EmbedAssets.random_restored_gif())
         
         embed.set_footer(
-            text=f"🐺 Fenrir • Restored by {author.display_name}",
+            text=f"🐺 Fenrir {quip} • Restored by {author.display_name}",
             icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
         )
         
@@ -192,13 +256,19 @@ class DowntimeEmbed:
         service_type: ServiceType = ServiceType.OTHER
     ) -> discord.Embed:
         """Create a scheduled maintenance announcement embed"""
+        personality = FenrirPersonality()
+        scheduled_msg = personality.get_scheduled_message()
+        mood_emoji = personality.get_mood_emoji()
+        quip = personality.get_footer_quip()
+        
         embed = discord.Embed(
-            title="📅 SCHEDULED MAINTENANCE",
+            title=f"{mood_emoji} SCHEDULED MAINTENANCE",
             description=(
                 f"```ansi\n"
                 f"\u001b[1;33m█▀█ █░░ ▄▀█ █▄░█ █▄░█ █▀▀ █▀▄\n"
                 f"\u001b[1;33m█▀▀ █▄▄ █▀█ █░▀█ █░▀█ ██▄ █▄▀\n"
                 f"```\n"
+                f"*{scheduled_msg}*\n\n"
                 f"**{service}** has upcoming scheduled maintenance"
             ),
             color=0xFFAA00,  # Orange
@@ -228,10 +298,10 @@ class DowntimeEmbed:
         
         # Visual elements
         embed.set_thumbnail(url=EmbedAssets.SCHEDULED_THUMB)
-        embed.set_image(url=EmbedAssets.SCHEDULED_GIF)
+        embed.set_image(url=EmbedAssets.random_scheduled_gif())
         
         embed.set_footer(
-            text=f"🐺 Fenrir • Scheduled by {author.display_name}",
+            text=f"🐺 Fenrir {quip} • Scheduled by {author.display_name}",
             icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
         )
         

@@ -18,6 +18,11 @@ class Config:
     uptimekuma_url: str = ""
     uptimekuma_api_key: str = ""
     uptimekuma_status_page: str = "default"
+    # Webhook server settings
+    webhook_enabled: bool = False
+    webhook_host: str = "0.0.0.0"
+    webhook_port: int = 8080
+    webhook_secret: str = ""
     
     @classmethod
     def from_env(cls) -> "Config":
@@ -36,7 +41,11 @@ class Config:
             command_prefix=os.getenv("COMMAND_PREFIX", "!"),
             uptimekuma_url=os.getenv("UPTIMEKUMA_URL", ""),
             uptimekuma_api_key=os.getenv("UPTIMEKUMA_API_KEY", ""),
-            uptimekuma_status_page=os.getenv("UPTIMEKUMA_STATUS_PAGE", "default")
+            uptimekuma_status_page=os.getenv("UPTIMEKUMA_STATUS_PAGE", "default"),
+            webhook_enabled=os.getenv("WEBHOOK_ENABLED", "false").lower() == "true",
+            webhook_host=os.getenv("WEBHOOK_HOST", "0.0.0.0"),
+            webhook_port=int(os.getenv("WEBHOOK_PORT", "8080")),
+            webhook_secret=os.getenv("WEBHOOK_SECRET", "")
         )
 
 

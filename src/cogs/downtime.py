@@ -120,11 +120,28 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
         view.message = msg
         
+        # Create incident thread for discussion/updates
+        thread = await msg.create_thread(
+            name=f"🔧 {service} - Incident Discussion",
+            auto_archive_duration=1440  # Archive after 24h of inactivity
+        )
+        await thread.send(
+            f"📋 **Incident Thread** for **{service}**\n\n"
+            f"Use this thread to:\n"
+            f"• Post updates on the situation\n"
+            f"• Share logs or error messages\n"
+            f"• Coordinate with others\n"
+            f"• Document the post-mortem\n\n"
+            f"*Thread will auto-archive after 24h of inactivity*"
+        )
+        view.incident_thread = thread
+        
         # Start timer if duration was parsed
         await view.start_timer()
         
         await interaction.response.send_message(
             f"✅ Downtime announcement sent for **{service}** ({service_type.label})\n"
+            f"💬 Incident thread created: {thread.mention}\n"
             f"💡 Click the button on the announcement to mark as restored.",
             ephemeral=True
         )
@@ -196,6 +213,17 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             view=view
         )
         view.message = msg
+        
+        # Create incident thread
+        thread = await msg.create_thread(
+            name=f"🔧 {service} - Incident Discussion",
+            auto_archive_duration=1440
+        )
+        await thread.send(
+            f"📋 **Incident Thread** for **{service}**\n\n"
+            f"Use this thread to post updates and coordinate."
+        )
+        view.incident_thread = thread
         
         await ctx.message.add_reaction("✅")
 

@@ -2,9 +2,11 @@
 
 import discord
 from discord.ext import commands
+from typing import Optional
 
 from .config import config
 from .utils.uptimekuma import init_uptimekuma
+from .utils.webhook_server import WebhookServer
 
 
 class FenrirBot(commands.Bot):
@@ -28,10 +30,21 @@ class FenrirBot(commands.Bot):
             help_command=commands.DefaultHelpCommand()
         )
         
+        self.webhook_server: Optional[WebhookServer] = None
+        
         # Initialize UptimeKuma client if configured
         if config and config.uptimekuma_url:
             init_uptimekuma(config.uptimekuma_url, config.uptimekuma_api_key)
             print(f"  ✅ UptimeKuma: {config.uptimekuma_url}")
+        
+        # Initialize webhook server if enabled
+        if config and config.webhook_enabled:
+            self.webhook_server = WebhookServer(
+                bot=self,
+                host=config.webhook_host,
+                port=config.webhook_port,
+                secret_token=config.webhook_secret or None
+            )
     
     async def setup_hook(self):
         """Called when the bot is starting up - load cogs here"""
@@ -57,7 +70,21 @@ class FenrirBot(commands.Bot):
         print(f"   Prefix: {self.command_prefix}")
         if config and config.announcement_channel_id:
             print(f"   Announcement Channel: {config.announcement_channel_id}")
+        
+        # Start webhook server if configured
+        if self.webhook_server:
+            self.webhook_server.set_channel(config.announcement_channel_id)
+            if config.notification_role_id:
+                self.webhook_server.set_mention(f"<@&{config.notification_role_id}>")
+            await self.webhook_server.start()
+            print(f"   Webhook Server: http://{config.webhook_host}:{config.webhook_port}")
         print()
+    
+    async def close(self):
+        """Cleanup when bot is shutting down"""
+        if self.webhook_server:
+            await self.webhook_server.stop()
+        await super().close()
 
 
 def create_bot() -> FenrirBot:

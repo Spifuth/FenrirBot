@@ -61,6 +61,7 @@ class DowntimeView(ui.View):
         self.resolved = False
         self.message: Optional[discord.Message] = None
         self.timer_task: Optional[asyncio.Task] = None
+        self.incident_thread: Optional[discord.Thread] = None
         
         # Parse duration for timer
         self.duration = parse_duration(duration_str)
@@ -133,6 +134,17 @@ class DowntimeView(ui.View):
         channel = self.announcement_channel or interaction.channel
         await channel.send(embed=embed)
         
+        # Close incident thread with summary
+        if self.incident_thread:
+            await self.incident_thread.send(
+                f"✅ **Incident Resolved**\n\n"
+                f"**Service:** {self.service}\n"
+                f"**Duration:** {duration_text}\n"
+                f"**Resolved by:** {interaction.user.mention}\n\n"
+                f"*This thread will be archived.*"
+            )
+            await self.incident_thread.edit(archived=True, locked=True)
+        
         await interaction.response.send_message(
             f"✅ **{self.service}** marked as restored!", 
             ephemeral=True
@@ -169,6 +181,11 @@ class DowntimeView(ui.View):
             f"🚫 Downtime announcement for **{self.service}** has been cancelled.",
             ephemeral=True
         )
+        
+        # Also archive the incident thread if it exists
+        if self.incident_thread:
+            await self.incident_thread.send("🚫 *Incident cancelled - false alarm*")
+            await self.incident_thread.edit(archived=True)
         
         self.stop()
     
