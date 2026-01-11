@@ -1,0 +1,43 @@
+"""Bot configuration management"""
+
+import os
+from dataclasses import dataclass
+from dotenv import load_dotenv
+
+# Load .env file immediately when this module is imported
+load_dotenv()
+
+
+@dataclass
+class Config:
+    """Bot configuration container"""
+    token: str
+    announcement_channel_id: int
+    notification_role_id: int = 0
+    command_prefix: str = "!"
+    uptimekuma_url: str = ""
+    uptimekuma_api_key: str = ""
+    uptimekuma_status_page: str = "default"
+    
+    @classmethod
+    def from_env(cls) -> "Config":
+        """Load configuration from environment variables"""
+        token = os.getenv("DISCORD_TOKEN")
+        if not token:
+            raise ValueError("DISCORD_TOKEN not found in environment variables")
+        
+        channel_id = os.getenv("ANNOUNCEMENT_CHANNEL_ID", "0")
+        role_id = os.getenv("NOTIFICATION_ROLE_ID", "0")
+        
+        return cls(
+            token=token,
+            announcement_channel_id=int(channel_id),
+            notification_role_id=int(role_id),
+            command_prefix=os.getenv("COMMAND_PREFIX", "!"),
+            uptimekuma_url=os.getenv("UPTIMEKUMA_URL", ""),
+            uptimekuma_api_key=os.getenv("UPTIMEKUMA_API_KEY", ""),
+            uptimekuma_status_page=os.getenv("UPTIMEKUMA_STATUS_PAGE", "default")
+        )
+
+
+config = Config.from_env() if os.getenv("DISCORD_TOKEN") else None

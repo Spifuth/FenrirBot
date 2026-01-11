@@ -1,0 +1,117 @@
+{
+  "containers": [
+    {
+      "id": "e29ade0f4c2b",
+      "name": "stremthru",
+      "image": "ghcr.io/muniftanjim/stremthru:latest",
+      "status": "Up 12 hours",
+      "state": "running"
+    },
+    {
+      "id": "d63281e39aef",
+      "name": "warp",
+      "image": "caomingjun/warp",
+      "status": "Up 12 hours (healthy)",
+      "state": "running"
+    },
+    {
+      "id": "096280d9f666",
+      "name": "projectsend",
+      "image": "lscr.io/linuxserver/projectsend:latest",
+      "status": "Up 20 hours",
+      "state": "running"
+    },
+    {
+      "id": "216c2be61427",
+      "name": "mariadb",
+      "image": "mariadb:latest",
+      "status": "Up 20 hours (healthy)",
+      "state": "running"
+    },
+    {
+      "id": "f6903b0dde32",
+      "name": "privatebin",
+      "image": "privatebin/nginx-fpm-alpine",
+      "status": "Up 20 hours",
+      "state": "running"
+    },
+    {
+      "id": "6788f00d733d",
+      "name": "traefik",
+      "image": "traefik:3.6",
+      "status": "Up 42 hours",
+      "state": "running"
+    },
+    {
+      "id": "d459e8b0a706",
+      "name": "socket-proxy",
+      "image": "lscr.io/linuxserver/socket-proxy:latest",
+      "status": "Up 42 hours",
+      "state": "running"
+    },
+    {
+      "id": "ce80fd447f3a",
+      "name": "deployrr-dashboard",
+      "image": "ghcr.io/gethomepage/homepage:v1.7.0",
+      "status": "Up 42 hours (healthy)",
+      "state": "running"
+    },
+    {
+      "id": "8539d61eb2fa",
+      "name": "traefik-access-log",
+      "image": "alpine",
+      "status": "Up 42 hours",
+      "state": "running"
+    },
+    {
+      "id": "5286588535ab",
+      "name": "crowdsec",
+      "image": "crowdsecurity/crowdsec",
+      "status": "Up 42 hours",
+      "state": "running"
+    },
+    {
+      "id": "d06102e54d63",
+      "name": "portainer",
+      "image": "portainer/portainer-ce:latest",
+      "status": "Up 42 hours",
+      "state": "running"
+    },
+    {
+      "id": "20c0db814ffc",
+      "name": "tailscale",
+      "image": "tailscale/tailscale:stable",
+      "status": "Up 42 hours",
+      "state": "running"
+    },
+    {
+      "id": "99bcef6067ce",
+      "name": "dozzle",
+      "image": "amir20/dozzle:latest",
+      "status": "Up 42 hours",
+      "state": "running"
+    },
+    {
+      "id": "96b166e578ea",
+      "name": "traefik-error-log",
+      "image": "alpine",
+      "status": "Up 42 hours",
+      "state": "running"
+    },
+    {
+      "id": "39328d942b33",
+      "name": "traefik-bouncer",
+      "image": "fbonalair/traefik-crowdsec-bouncer",
+      "status": "Up 42 hours (healthy)",
+      "state": "running"
+    },
+    {
+      "id": "ed1f7858f46c",
+      "name": "tinyauth",
+      "image": "ghcr.io/steveiliop56/tinyauth:v4",
+      "status": "Up 42 hours (healthy)",
+      "state": "running"
+    }
+  ],
+  "last_updated": "2026-01-11T19:29:01.714252"
+}
