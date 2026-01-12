@@ -67,20 +67,20 @@ class DockerCog(commands.Cog, name="Docker"):
 
     # ========== Commands ==========
     
-    @app_commands.command(name="containers", description="List all Docker containers")
+    @app_commands.command(name="containers", description="🐳 Lister tous les containers Docker")
     async def containers_slash(self, interaction: discord.Interaction):
         """List all Docker containers"""
         containers = docker_manager.get_containers()
         
         if not containers:
             await interaction.response.send_message(
-                "❌ No containers found or Docker not available", 
+                "❌ Aucun container trouvé ou Docker indisponible", 
                 ephemeral=True
             )
             return
         
         embed = discord.Embed(
-            title="🐳 Docker Containers",
+            title="🐳 Containers Docker",
             color=discord.Color.blue()
         )
         
@@ -89,38 +89,38 @@ class DockerCog(commands.Cog, name="Docker"):
         
         if running:
             running_list = "\n".join([f"🟢 `{c.display_name}`" for c in running[:15]])
-            embed.add_field(name=f"Running ({len(running)})", value=running_list, inline=True)
+            embed.add_field(name=f"En cours ({len(running)})", value=running_list, inline=True)
         
         if stopped:
             stopped_list = "\n".join([f"⚫ `{c.display_name}`" for c in stopped[:15]])
-            embed.add_field(name=f"Stopped ({len(stopped)})", value=stopped_list, inline=True)
+            embed.add_field(name=f"Arrêtés ({len(stopped)})", value=stopped_list, inline=True)
         
         if docker_manager.cache:
-            embed.set_footer(text=f"Last updated: {docker_manager.cache.last_updated}")
+            embed.set_footer(text=f"Mis à jour: {docker_manager.cache.last_updated}")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="stacks", description="List all Docker Compose stacks")
+    @app_commands.command(name="stacks", description="📦 Lister tous les stacks Docker Compose")
     async def stacks_slash(self, interaction: discord.Interaction):
         """List all Docker Compose stacks"""
         stacks = docker_manager.get_stacks()
         
         if not stacks:
             await interaction.response.send_message(
-                "❌ No stacks found or Docker not available",
+                "❌ Aucun stack trouvé ou Docker indisponible",
                 ephemeral=True
             )
             return
         
         embed = discord.Embed(
-            title="📦 Docker Compose Stacks",
+            title="📦 Stacks Docker Compose",
             description="\n".join([f"• `{s}`" for s in stacks]),
             color=discord.Color.blue()
         )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="refresh", description="Refresh the Docker container list")
+    @app_commands.command(name="refresh", description="🔄 Rafraîchir la liste des containers")
     async def refresh_slash(self, interaction: discord.Interaction):
         """Manually refresh the container list"""
         await interaction.response.defer(ephemeral=True)
@@ -129,7 +129,7 @@ class DockerCog(commands.Cog, name="Docker"):
         stacks = docker_manager.get_stacks()
         
         await interaction.followup.send(
-            f"✅ Refreshed! Found **{len(containers)}** containers and **{len(stacks)}** stacks",
+            f"✅ Rafraîchi ! **{len(containers)}** containers et **{len(stacks)}** stacks trouvés",
             ephemeral=True
         )
 

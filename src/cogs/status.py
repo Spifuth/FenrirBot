@@ -4,8 +4,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from ..config import config
 from ..utils.embeds import DowntimeEmbed
+from ..utils.helpers import get_announcement_channel, get_notification_mention
 
 
 class StatusCog(commands.Cog, name="Status"):
@@ -13,35 +13,33 @@ class StatusCog(commands.Cog, name="Status"):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-    
-    def _get_announcement_channel(self, fallback: discord.TextChannel) -> discord.TextChannel:
-        """Get the configured announcement channel or fall back to current channel"""
-        if config and config.announcement_channel_id:
-            channel = self.bot.get_channel(config.announcement_channel_id)
-            if channel:
-                return channel
-        return fallback
 
-    @app_commands.command(name="status", description="Send a quick status update message")
-    @app_commands.describe(message="Status message to send")
-    async def status_slash(self, interaction: discord.Interaction, message: str):
+    @app_commands.command(name="status", description="Envoyer une mise à jour de statut")
+    @app_commands.describe(
+        message="Message de statut à envoyer",
+        mention="Mentionner le rôle de notification (défaut: Non)"
+    )
+    async def status_slash(self, interaction: discord.Interaction, message: str, mention: bool = False):
         """Send a status update via slash command"""
-        channel = self._get_announcement_channel(interaction.channel)
+        channel = get_announcement_channel(self.bot, interaction.channel)
         embed = DowntimeEmbed.status(message, interaction.user)
         
-        await channel.send(embed=embed)
-        await interaction.response.send_message("✅ Status update sent", ephemeral=True)
+        await channel.send(
+            content=get_notification_mention() if mention else None,
+            embed=embed
+        )
+        await interaction.response.send_message("✅ Mise à jour envoyée", ephemeral=True)
 
-    @app_commands.command(name="ping", description="Check if the bot is responsive")
+    @app_commands.command(name="ping", description="Vérifier si le bot répond")
     async def ping_slash(self, interaction: discord.Interaction):
         """Check bot latency"""
         latency = round(self.bot.latency * 1000)
-        await interaction.response.send_message(f"🏓 Pong! Latency: {latency}ms", ephemeral=True)
+        await interaction.response.send_message(f"🏓 Pong! Latence: {latency}ms", ephemeral=True)
 
     @commands.command(name="status")
     async def status_prefix(self, ctx: commands.Context, *, message: str):
         """Quick status update: !status Everything is fine"""
-        channel = self._get_announcement_channel(ctx.channel)
+        channel = get_announcement_channel(self.bot, ctx.channel)
         embed = DowntimeEmbed.status(message, ctx.author)
         
         await channel.send(embed=embed)

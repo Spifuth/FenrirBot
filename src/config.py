@@ -21,8 +21,13 @@ class Config:
     # Webhook server settings
     webhook_enabled: bool = False
     webhook_host: str = "0.0.0.0"
-    webhook_port: int = 8080
+    webhook_port: int = 8085
     webhook_secret: str = ""
+    # Netdata settings
+    netdata_url: str = ""
+    netdata_api_key: str = ""
+    # Reports settings
+    reports_channel_id: int = 0
     
     @classmethod
     def from_env(cls) -> "Config":
@@ -44,8 +49,11 @@ class Config:
             uptimekuma_status_page=os.getenv("UPTIMEKUMA_STATUS_PAGE", "default"),
             webhook_enabled=os.getenv("WEBHOOK_ENABLED", "false").lower() == "true",
             webhook_host=os.getenv("WEBHOOK_HOST", "0.0.0.0"),
-            webhook_port=int(os.getenv("WEBHOOK_PORT", "8080")),
-            webhook_secret=os.getenv("WEBHOOK_SECRET", "")
+            webhook_port=int(os.getenv("WEBHOOK_PORT", "8085")),
+            webhook_secret=os.getenv("WEBHOOK_SECRET", ""),
+            netdata_url=os.getenv("NETDATA_URL", ""),
+            netdata_api_key=os.getenv("NETDATA_API_KEY", ""),
+            reports_channel_id=int(os.getenv("REPORTS_CHANNEL_ID", "0"))
         )
 
 

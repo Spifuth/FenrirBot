@@ -1,0 +1,24 @@
+[Unit]
+Description=Fenrir Bot File Watcher (Hot Reload)
+Documentation=https://github.com/your-repo/FenrirBot
+After=fenrir.service
+BindsTo=fenrir.service
+PartOf=fenrir.service
+
+[Service]
+Type=simple
+User=YOUR_USER
+Group=YOUR_USER
+WorkingDirectory=/srv/project/python/FenrirBot
+
+ExecStart=/srv/project/python/FenrirBot/scripts/watch.sh
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fenrir-watcher
+
+[Install]
+WantedBy=multi-user.target

@@ -33,6 +33,73 @@ class ServiceType(Enum):
         }.get(self, "Service")
 
 
+class MaintenanceType(Enum):
+    """Type of maintenance being performed"""
+    DOWNTIME = "downtime"
+    UPDATE = "update"
+    BACKUP = "backup"
+    CONFIG = "config"
+    SECURITY = "security"
+    MIGRATION = "migration"
+    OTHER = "other"
+    
+    @property
+    def icon(self) -> str:
+        """Get the icon for this maintenance type"""
+        icons = {
+            MaintenanceType.DOWNTIME: "🔧",
+            MaintenanceType.UPDATE: "⬆️",
+            MaintenanceType.BACKUP: "💾",
+            MaintenanceType.CONFIG: "⚙️",
+            MaintenanceType.SECURITY: "🔒",
+            MaintenanceType.MIGRATION: "🚚",
+            MaintenanceType.OTHER: "🛠️"
+        }
+        return icons.get(self, "🛠️")
+    
+    @property
+    def label(self) -> str:
+        """Get the label for this maintenance type"""
+        labels = {
+            MaintenanceType.DOWNTIME: "Downtime",
+            MaintenanceType.UPDATE: "Update",
+            MaintenanceType.BACKUP: "Backup",
+            MaintenanceType.CONFIG: "Config Change",
+            MaintenanceType.SECURITY: "Security Patch",
+            MaintenanceType.MIGRATION: "Migration",
+            MaintenanceType.OTHER: "Maintenance"
+        }
+        return labels.get(self, "Maintenance")
+    
+    @property
+    def color(self) -> int:
+        """Get the color for this maintenance type"""
+        colors = {
+            MaintenanceType.DOWNTIME: 0xFF4444,   # Red
+            MaintenanceType.UPDATE: 0x3498DB,     # Blue
+            MaintenanceType.BACKUP: 0x9B59B6,     # Purple
+            MaintenanceType.CONFIG: 0xFFAA00,     # Orange
+            MaintenanceType.SECURITY: 0xE74C3C,   # Dark red
+            MaintenanceType.MIGRATION: 0x1ABC9C,  # Teal
+            MaintenanceType.OTHER: 0x95A5A6       # Gray
+        }
+        return colors.get(self, 0x95A5A6)
+    
+    @property
+    def verb(self) -> str:
+        """Get the action verb for this maintenance type"""
+        verbs = {
+            MaintenanceType.DOWNTIME: "going offline",
+            MaintenanceType.UPDATE: "being updated",
+            MaintenanceType.BACKUP: "being backed up",
+            MaintenanceType.CONFIG: "having config changes applied",
+            MaintenanceType.SECURITY: "receiving security patches",
+            MaintenanceType.MIGRATION: "being migrated",
+            MaintenanceType.OTHER: "under maintenance"
+        }
+        return verbs.get(self, "under maintenance")
+
+
 class EmbedAssets:
     """URLs for embed images and GIFs"""
     
@@ -153,10 +220,7 @@ class DowntimeEmbed:
         embed = discord.Embed(
             title=f"{mood_emoji} DOWNTIME ALERT",
             description=(
-                f"```ansi\n"
-                f"\u001b[1;31m█▀▀ █▀▀ █▀█ █░█ █ █▀▀ █▀▀   █▀▄ █▀█ █░█░█ █▄░█\n"
-                f"\u001b[1;31m▄▄█ ██▄ █▀▄ ▀▄▀ █ █▄▄ ██▄   █▄▀ █▄█ ▀▄▀▄▀ █░▀█\n"
-                f"```\n"
+                f"🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴\n"
                 f"*{greeting}*\n\n"
                 f"**{service}** is going offline for maintenance"
             ),
@@ -199,6 +263,71 @@ class DowntimeEmbed:
         return embed
     
     @staticmethod
+    def maintenance(
+        service: str, 
+        reason: str, 
+        estimated_duration: str, 
+        author: discord.Member,
+        service_type: ServiceType = ServiceType.OTHER,
+        maintenance_type: "MaintenanceType" = None
+    ) -> discord.Embed:
+        """Create a maintenance announcement embed for various types (update, backup, config, etc.)"""
+        from .embeds import MaintenanceType  # Import here to avoid circular
+        
+        if maintenance_type is None:
+            maintenance_type = MaintenanceType.OTHER
+            
+        personality = FenrirPersonality()
+        greeting = personality.get_greeting()
+        mood_emoji = personality.get_mood_emoji()
+        quip = personality.get_footer_quip()
+        
+        embed = discord.Embed(
+            title=f"{maintenance_type.icon} {maintenance_type.label.upper()} IN PROGRESS",
+            description=(
+                f"🔵🔵🔵🔵🔵🔵🔵🔵🔵🔵\n"
+                f"*{greeting}*\n\n"
+                f"**{service}** is {maintenance_type.verb}"
+            ),
+            color=maintenance_type.color,
+            timestamp=datetime.now()
+        )
+        
+        # Main info in a nice format
+        embed.add_field(
+            name=f"{service_type.icon} {service_type.label}",
+            value=f"```\n{service}\n```",
+            inline=True
+        )
+        embed.add_field(
+            name="⏱️ Est. Duration",
+            value=f"```\n{estimated_duration}\n```",
+            inline=True
+        )
+        embed.add_field(
+            name=f"{maintenance_type.icon} Type",
+            value=f"```\n{maintenance_type.label}\n```",
+            inline=True
+        )
+        embed.add_field(
+            name="📝 Details",
+            value=f">>> {reason}",
+            inline=False
+        )
+        
+        # Visual elements
+        embed.set_thumbnail(url=EmbedAssets.SCHEDULED_THUMB)
+        embed.set_image(url=EmbedAssets.random_scheduled_gif())
+        
+        # Footer with author and mood quip
+        embed.set_footer(
+            text=f"🐺 Fenrir {quip} • Announced by {author.display_name}",
+            icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
+        )
+        
+        return embed
+
+    @staticmethod
     def end(
         service: str, 
         author: discord.Member,
@@ -213,10 +342,7 @@ class DowntimeEmbed:
         embed = discord.Embed(
             title=f"{mood_emoji} SERVICE RESTORED",
             description=(
-                f"```ansi\n"
-                f"\u001b[1;32m█▀▀ █▀▀ █▀█ █░█ █ █▀▀ █▀▀   █░█ █▀█\n"
-                f"\u001b[1;32m▄▄█ ██▄ █▀▄ ▀▄▀ █ █▄▄ ██▄   █▄█ █▀▀\n"
-                f"```\n"
+                f"🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢\n"
                 f"*{restored_msg}*\n\n"
                 f"**{service}** is back online and operational! 🎉"
             ),
@@ -253,25 +379,28 @@ class DowntimeEmbed:
         duration: str, 
         reason: str, 
         author: discord.Member,
-        service_type: ServiceType = ServiceType.OTHER
+        service_type: ServiceType = ServiceType.OTHER,
+        maintenance_type: "MaintenanceType" = None
     ) -> discord.Embed:
         """Create a scheduled maintenance announcement embed"""
+        from .embeds import MaintenanceType  # Import here to avoid circular
+        
+        if maintenance_type is None:
+            maintenance_type = MaintenanceType.DOWNTIME
+            
         personality = FenrirPersonality()
         scheduled_msg = personality.get_scheduled_message()
         mood_emoji = personality.get_mood_emoji()
         quip = personality.get_footer_quip()
         
         embed = discord.Embed(
-            title=f"{mood_emoji} SCHEDULED MAINTENANCE",
+            title=f"{maintenance_type.icon} SCHEDULED {maintenance_type.label.upper()}",
             description=(
-                f"```ansi\n"
-                f"\u001b[1;33m█▀█ █░░ ▄▀█ █▄░█ █▄░█ █▀▀ █▀▄\n"
-                f"\u001b[1;33m█▀▀ █▄▄ █▀█ █░▀█ █░▀█ ██▄ █▄▀\n"
-                f"```\n"
+                f"🟡🟡🟡🟡🟡🟡🟡🟡🟡🟡\n"
                 f"*{scheduled_msg}*\n\n"
-                f"**{service}** has upcoming scheduled maintenance"
+                f"**{service}** has a scheduled **{maintenance_type.label.lower()}**"
             ),
-            color=0xFFAA00,  # Orange
+            color=maintenance_type.color,
             timestamp=datetime.now()
         )
         
@@ -283,6 +412,11 @@ class DowntimeEmbed:
         embed.add_field(
             name="📅 When",
             value=f"```\n{scheduled_time}\n```",
+            inline=True
+        )
+        embed.add_field(
+            name=f"{maintenance_type.icon} Type",
+            value=f"```\n{maintenance_type.label}\n```",
             inline=True
         )
         embed.add_field(

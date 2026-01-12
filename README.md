@@ -97,6 +97,48 @@ python run.py
 !status All systems operational
 ```
 
+## 🖥️ Netdata Integration (System Monitoring)
+
+Fenrir can receive alerts from Netdata for CPU, RAM, Disk, Network, and Temperature monitoring.
+
+### Setup Netdata Webhooks
+
+1. **Enable webhooks in your `.env`:**
+```env
+WEBHOOK_ENABLED=true
+WEBHOOK_HOST=0.0.0.0
+WEBHOOK_PORT=8085
+WEBHOOK_SECRET=your_secret_token  # Optional but recommended
+NETDATA_URL=http://localhost:19999  # For /netdata commands
+```
+
+2. **Configure Netdata to send alerts to Fenrir:**
+```bash
+# On your Netdata server, run:
+./scripts/setup-netdata-webhook.sh http://YOUR_BOT_IP:8085 your_secret_token
+```
+
+3. **Or configure manually** - Edit `/etc/netdata/health_alarm_notify.conf`:
+```bash
+SEND_CUSTOM="YES"
+DEFAULT_RECIPIENT_CUSTOM="http://YOUR_BOT_IP:8080/webhook/netdata"
+```
+
+### Netdata Slash Commands
+```
+/netdata status   # View current CPU, RAM, Disk usage
+/netdata alarms   # View active alerts
+/netdata test     # Send a test alert
+```
+
+### Supported Alert Types
+- 🖥️ **CPU** - High CPU utilization alerts
+- 🧠 **RAM** - Memory usage warnings
+- 💾 **Disk** - Disk space alerts
+- 🌐 **Network** - Bandwidth and traffic alerts
+- 🌡️ **Temperature** - CPU/System temperature warnings
+- 📊 **Load** - System load averages
+
 ## Adding New Cogs
 
 Create a new file in `src/cogs/`, e.g. `src/cogs/mycommands.py`:
