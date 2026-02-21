@@ -24,7 +24,7 @@ except ImportError:
 # Channel & Mention Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_announcement_channel(bot: discord.Client, fallback: Optional[discord.TextChannel] = None) -> Optional[discord.TextChannel]:
+def get_announcement_channel(bot: discord.Client, fallback: Optional[discord.abc.Messageable] = None) -> Optional[discord.abc.Messageable]:
     """Get the configured announcement channel or fall back to provided channel"""
     if config and config.announcement_channel_id:
         channel = bot.get_channel(config.announcement_channel_id)

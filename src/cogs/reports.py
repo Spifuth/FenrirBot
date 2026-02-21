@@ -20,7 +20,6 @@ from ..utils.helpers import (
     PARIS_TZ
 )
 
-
 class ReportPeriod(Enum):
     """Report period types"""
     DAILY = "daily"
@@ -138,7 +137,7 @@ class ReportsCog(commands.Cog):
         self.weekly_report.start()
         self.monthly_report.start()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         """Cleanup when cog is unloaded"""
         self.collect_stats.cancel()
         self.daily_report.cancel()

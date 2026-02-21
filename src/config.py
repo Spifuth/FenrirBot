@@ -18,6 +18,10 @@ class Config:
     uptimekuma_url: str = ""
     uptimekuma_api_key: str = ""
     uptimekuma_status_page: str = "default"
+    # Uptime Kuma authenticated API (for pause/resume monitors)
+    uptimekuma_username: str = ""
+    uptimekuma_password: str = ""
+    uptimekuma_auto_pause: bool = True  # Auto-pause monitors during maintenance
     # Webhook server settings
     webhook_enabled: bool = False
     webhook_host: str = "0.0.0.0"
@@ -47,6 +51,9 @@ class Config:
             uptimekuma_url=os.getenv("UPTIMEKUMA_URL", ""),
             uptimekuma_api_key=os.getenv("UPTIMEKUMA_API_KEY", ""),
             uptimekuma_status_page=os.getenv("UPTIMEKUMA_STATUS_PAGE", "default"),
+            uptimekuma_username=os.getenv("UPTIMEKUMA_USERNAME", ""),
+            uptimekuma_password=os.getenv("UPTIMEKUMA_PASSWORD", ""),
+            uptimekuma_auto_pause=os.getenv("UPTIMEKUMA_AUTO_PAUSE", "true").lower() == "true",
             webhook_enabled=os.getenv("WEBHOOK_ENABLED", "false").lower() == "true",
             webhook_host=os.getenv("WEBHOOK_HOST", "0.0.0.0"),
             webhook_port=int(os.getenv("WEBHOOK_PORT", "8085")),

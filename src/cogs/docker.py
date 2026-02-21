@@ -3,7 +3,6 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from typing import Optional
 
 from ..utils.docker import docker_manager
 
@@ -15,7 +14,7 @@ class DockerCog(commands.Cog, name="Docker"):
         self.bot = bot
         self.auto_refresh.start()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         self.auto_refresh.cancel()
     
     @tasks.loop(minutes=5)

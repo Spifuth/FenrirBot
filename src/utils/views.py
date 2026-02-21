@@ -8,6 +8,7 @@ import re
 from typing import Optional
 
 from .embeds import DowntimeEmbed, ServiceType
+from . import uptimekuma as uptimekuma_module
 
 
 def parse_duration(duration_str: str) -> Optional[timedelta]:
@@ -46,9 +47,11 @@ class DowntimeView(ui.View):
         service: str, 
         author_id: int, 
         duration_str: str = "Unknown",
-        announcement_channel: discord.TextChannel = None,
-        notification_mention: str = "@here",
-        service_type: ServiceType = ServiceType.OTHER
+        announcement_channel: Optional[discord.abc.Messageable] = None,
+        notification_mention: Optional[str] = "@here",
+        service_type: ServiceType = ServiceType.OTHER,
+        uptimekuma_paused: bool = False,
+        uptimekuma_monitor_id: Optional[int] = None
     ):
         # Timeout after 24 hours
         super().__init__(timeout=86400)
@@ -62,6 +65,10 @@ class DowntimeView(ui.View):
         self.message: Optional[discord.Message] = None
         self.timer_task: Optional[asyncio.Task] = None
         self.incident_thread: Optional[discord.Thread] = None
+        
+        # UptimeKuma integration
+        self.uptimekuma_paused = uptimekuma_paused
+        self.uptimekuma_monitor_id = uptimekuma_monitor_id
         
         # Parse duration for timer
         self.duration = parse_duration(duration_str)
@@ -108,6 +115,18 @@ class DowntimeView(ui.View):
         if self.timer_task:
             self.timer_task.cancel()
         
+        # Resume UptimeKuma monitor if it was paused
+        uptimekuma_resumed = False
+        if self.uptimekuma_paused and uptimekuma_module.uptimekuma_auth_client:
+            try:
+                if self.uptimekuma_monitor_id:
+                    success = await uptimekuma_module.uptimekuma_auth_client.resume_monitor(self.uptimekuma_monitor_id)
+                else:
+                    success, _ = await uptimekuma_module.uptimekuma_auth_client.resume_monitor_by_name(self.service)
+                uptimekuma_resumed = success
+            except Exception as e:
+                print(f"[UptimeKuma] Error resuming monitor on restore: {e}")
+        
         # Calculate actual downtime
         actual_duration = datetime.now() - self.start_time
         hours, remainder = divmod(int(actual_duration.total_seconds()), 3600)
@@ -125,13 +144,15 @@ class DowntimeView(ui.View):
         button.label = f"✅ Restored after {duration_text}"
         button.style = discord.ButtonStyle.gray
         
+        assert interaction.message is not None
         await interaction.message.edit(view=self)
-        
+
         # Send restoration announcement
         embed = DowntimeEmbed.end(self.service, interaction.user, self.service_type)
         embed.add_field(name="⏱️ Actual Downtime", value=duration_text, inline=True)
         
         channel = self.announcement_channel or interaction.channel
+        assert channel is not None
         await channel.send(embed=embed)
         
         # Close incident thread with summary
@@ -168,10 +189,21 @@ class DowntimeView(ui.View):
         if self.timer_task:
             self.timer_task.cancel()
         
+        # Resume UptimeKuma monitor if it was paused (false alarm)
+        if self.uptimekuma_paused and uptimekuma_module.uptimekuma_auth_client:
+            try:
+                if self.uptimekuma_monitor_id:
+                    await uptimekuma_module.uptimekuma_auth_client.resume_monitor(self.uptimekuma_monitor_id)
+                else:
+                    await uptimekuma_module.uptimekuma_auth_client.resume_monitor_by_name(self.service)
+            except Exception as e:
+                print(f"[UptimeKuma] Error resuming monitor on cancel: {e}")
+        
         # Update the original message
         for child in self.children:
             child.disabled = True
         
+        assert interaction.message is not None
         await interaction.message.edit(
             content=f"~~{interaction.message.content or ''}~~ **[CANCELLED]**",
             view=self

@@ -74,7 +74,7 @@ class FenrirBot(commands.Bot):
             print(f"   Announcement Channel: {config.announcement_channel_id}")
         
         # Start webhook server if configured
-        if self.webhook_server:
+        if self.webhook_server and config:
             self.webhook_server.set_channel(config.announcement_channel_id)
             if config.notification_role_id:
                 self.webhook_server.set_mention(f"<@&{config.notification_role_id}>")

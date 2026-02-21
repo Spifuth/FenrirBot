@@ -4,6 +4,7 @@ import discord
 import random
 from datetime import datetime
 from enum import Enum
+from typing import Optional, Union
 
 from .personality import FenrirPersonality
 
@@ -205,10 +206,10 @@ class DowntimeEmbed:
     
     @staticmethod
     def start(
-        service: str, 
-        reason: str, 
-        estimated_duration: str, 
-        author: discord.Member,
+        service: str,
+        reason: str,
+        estimated_duration: str,
+        author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER
     ) -> discord.Embed:
         """Create a downtime start announcement embed"""
@@ -264,12 +265,12 @@ class DowntimeEmbed:
     
     @staticmethod
     def maintenance(
-        service: str, 
-        reason: str, 
-        estimated_duration: str, 
-        author: discord.Member,
+        service: str,
+        reason: str,
+        estimated_duration: str,
+        author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER,
-        maintenance_type: "MaintenanceType" = None
+        maintenance_type: Optional["MaintenanceType"] = None
     ) -> discord.Embed:
         """Create a maintenance announcement embed for various types (update, backup, config, etc.)"""
         from .embeds import MaintenanceType  # Import here to avoid circular
@@ -329,8 +330,8 @@ class DowntimeEmbed:
 
     @staticmethod
     def end(
-        service: str, 
-        author: discord.Member,
+        service: str,
+        author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER
     ) -> discord.Embed:
         """Create a service restored announcement embed"""
@@ -374,13 +375,13 @@ class DowntimeEmbed:
     
     @staticmethod
     def scheduled(
-        service: str, 
-        scheduled_time: str, 
-        duration: str, 
-        reason: str, 
-        author: discord.Member,
+        service: str,
+        scheduled_time: str,
+        duration: str,
+        reason: str,
+        author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER,
-        maintenance_type: "MaintenanceType" = None
+        maintenance_type: Optional["MaintenanceType"] = None
     ) -> discord.Embed:
         """Create a scheduled maintenance announcement embed"""
         from .embeds import MaintenanceType  # Import here to avoid circular
@@ -442,7 +443,7 @@ class DowntimeEmbed:
         return embed
     
     @staticmethod
-    def status(message: str, author: discord.Member) -> discord.Embed:
+    def status(message: str, author: Union[discord.User, discord.Member]) -> discord.Embed:
         """Create a general status update embed"""
         embed = discord.Embed(
             title="📢 STATUS UPDATE",

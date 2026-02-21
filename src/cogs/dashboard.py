@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from datetime import datetime
+from typing import Optional
 
 from ..config import config
 from ..utils.docker import docker_manager
@@ -91,7 +92,7 @@ class DashboardCog(commands.Cog, name="Dashboard"):
 
     @app_commands.command(name="uptime", description="📡 Afficher le statut UptimeKuma d'un service")
     @app_commands.describe(service="Nom du service (laisser vide pour l'aperçu)")
-    async def uptime_slash(self, interaction: discord.Interaction, service: str = None):
+    async def uptime_slash(self, interaction: discord.Interaction, service: Optional[str] = None):
         """Show UptimeKuma uptime stats"""
         if not uptimekuma_client:
             await interaction.response.send_message(

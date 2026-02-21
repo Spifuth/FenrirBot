@@ -3,6 +3,7 @@
 import random
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 
 
 class Mood(Enum):
@@ -162,31 +163,31 @@ class FenrirPersonality:
             return Mood.NIGHT
     
     @classmethod
-    def get_greeting(cls, mood: Mood = None) -> str:
+    def get_greeting(cls, mood: Optional[Mood] = None) -> str:
         """Get a random greeting based on current mood"""
         mood = mood or cls.get_current_mood()
         return random.choice(cls.GREETINGS[mood])
     
     @classmethod
-    def get_restored_message(cls, mood: Mood = None) -> str:
+    def get_restored_message(cls, mood: Optional[Mood] = None) -> str:
         """Get a random restored message based on current mood"""
         mood = mood or cls.get_current_mood()
         return random.choice(cls.RESTORED_MESSAGES[mood])
     
     @classmethod
-    def get_scheduled_message(cls, mood: Mood = None) -> str:
+    def get_scheduled_message(cls, mood: Optional[Mood] = None) -> str:
         """Get a random scheduled message based on current mood"""
         mood = mood or cls.get_current_mood()
         return random.choice(cls.SCHEDULED_MESSAGES[mood])
     
     @classmethod
-    def get_footer_quip(cls, mood: Mood = None) -> str:
+    def get_footer_quip(cls, mood: Optional[Mood] = None) -> str:
         """Get a random footer quip based on current mood"""
         mood = mood or cls.get_current_mood()
         return random.choice(cls.FOOTER_QUIPS[mood])
     
     @classmethod
-    def get_mood_emoji(cls, mood: Mood = None) -> str:
+    def get_mood_emoji(cls, mood: Optional[Mood] = None) -> str:
         """Get emoji representing current mood"""
         mood = mood or cls.get_current_mood()
         return {

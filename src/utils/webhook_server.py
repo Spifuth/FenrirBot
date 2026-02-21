@@ -74,7 +74,7 @@ class WebhookServer:
         title: str, 
         description: str, 
         color: int = 0xFF4444,
-        fields: list = None,
+        fields: Optional[list] = None,
         source: str = "External Alert"
     ):
         """Send an alert embed to the configured channel"""
@@ -83,7 +83,7 @@ class WebhookServer:
             return
         
         channel = self.bot.get_channel(self.channel_id)
-        if not channel:
+        if not channel or not isinstance(channel, discord.abc.Messageable):
             print(f"⚠️ Channel {self.channel_id} not found")
             return
         
