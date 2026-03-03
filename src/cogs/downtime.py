@@ -1,0 +1,867 @@
+"""Downtime announcement commands"""
+
+import discord
+import json
+from discord import app_commands
+from discord.ext import commands, tasks
+from datetime import datetime
+from dataclasses import dataclass, asdict
+from typing import Optional
+from pathlib import Path
+
+from ..config import config
+from ..utils.embeds import DowntimeEmbed, ServiceType, MaintenanceType
+from ..utils.docker import docker_manager
+from ..utils.views import DowntimeView
+from ..utils.helpers import get_announcement_channel, get_notification_mention
+from ..utils import uptimekuma as uptimekuma_module
+
+
+@dataclass
+class ScheduledMaintenance:
+    """Represents a scheduled maintenance"""
+    service: str
+    scheduled_time: datetime
+    duration: str
+    reason: str
+    author_id: int
+    channel_id: int
+    maintenance_type: str = "downtime"
+    announced: bool = False
+    
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict"""
+        return {
+            "service": self.service,
+            "scheduled_time": self.scheduled_time.isoformat(),
+            "duration": self.duration,
+            "reason": self.reason,
+            "author_id": self.author_id,
+            "channel_id": self.channel_id,
+            "maintenance_type": self.maintenance_type,
+            "announced": self.announced
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "ScheduledMaintenance":
+        """Create from dict"""
+        return cls(
+            service=data["service"],
+            scheduled_time=datetime.fromisoformat(data["scheduled_time"]),
+            duration=data["duration"],
+            reason=data["reason"],
+            author_id=data["author_id"],
+            channel_id=data["channel_id"],
+            maintenance_type=data.get("maintenance_type", "downtime"),
+            announced=data.get("announced", False)
+        )
+
+
+# Path to the scheduled maintenances JSON file
+SCHEDULED_FILE = Path(__file__).parent.parent.parent / "data" / "scheduled_maintenances.json"
+
+
+class DowntimeCog(commands.Cog, name="Downtime"):
+    """Commands for announcing service downtime and restoration"""
+    
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self._containers_cache: set[str] = set()
+        self._stacks_cache: set[str] = set()
+        self._scheduled_maintenances: list[ScheduledMaintenance] = []
+        self._load_scheduled_maintenances()
+        self.check_scheduled_maintenances.start()
+        
+        # Initialize UptimeKuma authenticated client for pause/resume
+        self._init_uptimekuma_client()
+    
+    def _init_uptimekuma_client(self):
+        """Initialize UptimeKuma authenticated client if credentials are available"""
+        if config and config.uptimekuma_url and config.uptimekuma_username and config.uptimekuma_password:
+            uptimekuma_module.init_uptimekuma_auth(
+                config.uptimekuma_url,
+                config.uptimekuma_username,
+                config.uptimekuma_password
+            )
+            print("[Downtime] UptimeKuma auth client initialized for auto-pause/resume")
+        else:
+            print("[Downtime] UptimeKuma auth not configured (missing URL/username/password)")
+    
+    async def cog_unload(self):
+        self.check_scheduled_maintenances.cancel()
+    
+    def _load_scheduled_maintenances(self):
+        """Load scheduled maintenances from JSON file"""
+        if SCHEDULED_FILE.exists():
+            try:
+                with open(SCHEDULED_FILE, "r") as f:
+                    data = json.load(f)
+                self._scheduled_maintenances = [
+                    ScheduledMaintenance.from_dict(m) for m in data
+                ]
+                print(f"[Downtime] Loaded {len(self._scheduled_maintenances)} scheduled maintenance(s)")
+            except Exception as e:
+                print(f"[Downtime] Error loading scheduled maintenances: {e}")
+                self._scheduled_maintenances = []
+    
+    def _save_scheduled_maintenances(self):
+        """Save scheduled maintenances to JSON file"""
+        try:
+            SCHEDULED_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(SCHEDULED_FILE, "w") as f:
+                json.dump(
+                    [m.to_dict() for m in self._scheduled_maintenances],
+                    f,
+                    indent=2
+                )
+        except Exception as e:
+            print(f"[Downtime] Error saving scheduled maintenances: {e}")
+    
+    @tasks.loop(seconds=30)
+    async def check_scheduled_maintenances(self):
+        """Check every 30 seconds if a scheduled maintenance should trigger"""
+        now = datetime.now()
+        triggered_any = False
+        
+        for maintenance in self._scheduled_maintenances[:]:
+            if maintenance.announced:
+                continue
+            
+            if now >= maintenance.scheduled_time:
+                # Check if it's a catchup (more than 5 minutes late)
+                is_catchup = (now - maintenance.scheduled_time).total_seconds() > 300
+                await self._trigger_scheduled_downtime(maintenance, is_catchup=is_catchup)
+                maintenance.announced = True
+                triggered_any = True
+        
+        # Clean up old announced maintenances and save
+        old_count = len(self._scheduled_maintenances)
+        self._scheduled_maintenances = [
+            m for m in self._scheduled_maintenances 
+            if not m.announced
+        ]
+        
+        if triggered_any or len(self._scheduled_maintenances) != old_count:
+            self._save_scheduled_maintenances()
+    
+    @check_scheduled_maintenances.before_loop
+    async def before_check_scheduled(self):
+        await self.bot.wait_until_ready()
+        # Check for missed maintenances on startup
+        await self._catchup_missed_maintenances()
+    
+    async def _catchup_missed_maintenances(self):
+        """Trigger any maintenances that were missed while bot was offline"""
+        now = datetime.now()
+        missed = [m for m in self._scheduled_maintenances if now >= m.scheduled_time and not m.announced]
+        
+        if missed:
+            print(f"[Downtime] Found {len(missed)} missed maintenance(s), triggering catchup...")
+            for maintenance in missed:
+                await self._trigger_scheduled_downtime(maintenance, is_catchup=True)
+                maintenance.announced = True
+            
+            # Clean up and save
+            self._scheduled_maintenances = [
+                m for m in self._scheduled_maintenances 
+                if not m.announced
+            ]
+            self._save_scheduled_maintenances()
+    
+    async def _trigger_scheduled_downtime(self, maintenance: ScheduledMaintenance, is_catchup: bool = False):
+        """Trigger the downtime announcement for a scheduled maintenance"""
+        channel = self.bot.get_channel(maintenance.channel_id)
+        if not channel:
+            return
+        
+        author = self.bot.get_user(maintenance.author_id)
+        assert author is not None
+        service_type = self._get_service_type(maintenance.service)
+        
+        # Get the maintenance type
+        try:
+            maint_type = MaintenanceType(maintenance.maintenance_type)
+        except ValueError:
+            maint_type = MaintenanceType.DOWNTIME
+        
+        # Use appropriate embed based on maintenance type
+        if maint_type == MaintenanceType.DOWNTIME:
+            embed = DowntimeEmbed.start(
+                maintenance.service, 
+                f"[SCHEDULED] {maintenance.reason}", 
+                maintenance.duration, 
+                author, 
+                service_type
+            )
+        else:
+            embed = DowntimeEmbed.maintenance(
+                maintenance.service,
+                f"[SCHEDULED] {maintenance.reason}",
+                maintenance.duration,
+                author,
+                service_type,
+                maint_type
+            )
+        
+        notification_mention = get_notification_mention()
+        
+        # Auto-pause UptimeKuma monitor if enabled
+        uptimekuma_paused = False
+        uptimekuma_monitor_id = None
+        if config and config.uptimekuma_auto_pause:
+            uptimekuma_paused, uptimekuma_monitor_id = await self._pause_uptimekuma_monitor(maintenance.service)
+        
+        # Create interactive view with restore button
+        view = DowntimeView(
+            service=maintenance.service,
+            author_id=maintenance.author_id,
+            duration_str=maintenance.duration,
+            announcement_channel=channel,
+            notification_mention=notification_mention,
+            service_type=service_type,
+            uptimekuma_paused=uptimekuma_paused,
+            uptimekuma_monitor_id=uptimekuma_monitor_id
+        )
+        
+        # Customize message based on catchup status
+        if is_catchup:
+            delay_minutes = int((datetime.now() - maintenance.scheduled_time).total_seconds() / 60)
+            content = f"{notification_mention} ⚠️ **Maintenance planifiée (retard {delay_minutes}min - bot hors ligne)**"
+        else:
+            content = f"{notification_mention} ⏰ **Maintenance planifiée démarrant maintenant!**"
+        
+        msg = await channel.send(
+            content=content,
+            embed=embed,
+            view=view
+        )
+        view.message = msg
+        
+        # Create incident thread
+        thread = await msg.create_thread(
+            name=f"{maint_type.icon} {maintenance.service} - {maint_type.label}",
+            auto_archive_duration=1440
+        )
+        
+        catchup_note = ""
+        if is_catchup:
+            catchup_note = f"\n⚠️ **Note:** This maintenance was triggered late because the bot was offline.\n"
+        
+        uptimekuma_note = ""
+        if uptimekuma_paused:
+            uptimekuma_note = f"\n⏸️ **UptimeKuma:** Monitor paused (ID: {uptimekuma_monitor_id})"
+        
+        await thread.send(
+            f"📋 **Scheduled Maintenance Thread** for **{maintenance.service}**\n\n"
+            f"⏰ This maintenance was scheduled and has now started automatically.\n"
+            f"📝 Reason: {maintenance.reason}\n"
+            f"⏱️ Expected duration: {maintenance.duration}"
+            f"{catchup_note}"
+            f"{uptimekuma_note}"
+        )
+        view.incident_thread = thread
+        
+        await view.start_timer()
+    
+    async def _pause_uptimekuma_monitor(self, service_name: str) -> tuple[bool, Optional[int]]:
+        """
+        Pause UptimeKuma monitor for a service if auto-pause is enabled
+        
+        Returns:
+            Tuple of (was_paused, monitor_id)
+        """
+        if not config or not config.uptimekuma_auto_pause:
+            return False, None
+        
+        if not uptimekuma_module.uptimekuma_auth_client:
+            return False, None
+        
+        try:
+            # Ensure connected
+            await uptimekuma_module.uptimekuma_auth_client.connect()
+            success, monitor_id = await uptimekuma_module.uptimekuma_auth_client.pause_monitor_by_name(service_name)
+            if success:
+                print(f"[Downtime] Auto-paused UptimeKuma monitor for '{service_name}' (ID: {monitor_id})")
+            return success, monitor_id
+        except Exception as e:
+            print(f"[Downtime] Error pausing UptimeKuma monitor for '{service_name}': {e}")
+            return False, None
+    
+    def _refresh_service_cache(self):
+        """Refresh the cached lists of containers and stacks"""
+        self._containers_cache = set(docker_manager.get_container_names(include_stopped=True))
+        self._stacks_cache = set(docker_manager.get_stacks())
+    
+    def _get_service_type(self, service_name: str) -> ServiceType:
+        """Determine if a service is a container, stack, or other"""
+        # Refresh cache if empty
+        if not self._containers_cache and not self._stacks_cache:
+            self._refresh_service_cache()
+        
+        if service_name in self._containers_cache:
+            return ServiceType.CONTAINER
+        elif service_name in self._stacks_cache:
+            return ServiceType.STACK
+        else:
+            return ServiceType.OTHER
+    
+    async def service_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Autocomplete for service names from Docker containers + stacks"""
+        # Refresh cache
+        self._refresh_service_cache()
+        
+        choices = []
+        
+        # Add containers with 🐳 prefix in display
+        for name in self._containers_cache:
+            if not current or current.lower() in name.lower():
+                choices.append(
+                    app_commands.Choice(name=f"🐳 {name}", value=name)
+                )
+        
+        # Add stacks with 📚 prefix in display  
+        for name in self._stacks_cache:
+            if not current or current.lower() in name.lower():
+                # Don't add if already in containers (same name)
+                if name not in self._containers_cache:
+                    choices.append(
+                        app_commands.Choice(name=f"📚 {name}", value=name)
+                    )
+        
+        # Sort by name and limit to 25
+        choices.sort(key=lambda c: c.name)
+        return choices[:25]
+
+    async def container_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Autocomplete for containers only"""
+        self._refresh_service_cache()
+        
+        choices = []
+        for name in self._containers_cache:
+            if not current or current.lower() in name.lower():
+                choices.append(app_commands.Choice(name=name, value=name))
+        
+        choices.sort(key=lambda c: c.name)
+        return choices[:25]
+
+    async def stack_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Autocomplete for stacks only"""
+        self._refresh_service_cache()
+        
+        choices = []
+        for name in self._stacks_cache:
+            if not current or current.lower() in name.lower():
+                choices.append(app_commands.Choice(name=name, value=name))
+        
+        choices.sort(key=lambda c: c.name)
+        return choices[:25]
+
+    async def monitor_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Autocomplete for Uptime Kuma monitors"""
+        if not uptimekuma_module.uptimekuma_auth_client:
+            return []
+        
+        try:
+            await uptimekuma_module.uptimekuma_auth_client.connect()
+            monitors = await uptimekuma_module.uptimekuma_auth_client.get_monitors()
+            
+            choices = []
+            for m in monitors:
+                name = m.get("name", "Unknown")
+                monitor_id = m.get("id", 0)
+                is_active = m.get("active", True)
+                status_icon = "🟢" if is_active else "⏸️"
+                
+                if not current or current.lower() in name.lower():
+                    choices.append(
+                        app_commands.Choice(
+                            name=f"{status_icon} {name} (ID: {monitor_id})",
+                            value=str(monitor_id)
+                        )
+                    )
+            
+            return choices[:25]
+        except:
+            return []
+
+    # ========== Slash Commands ==========
+    
+    @app_commands.command(name="downtime", description="🔴 Annoncer l'interruption d'un service")
+    @app_commands.describe(
+        service="Nom du service/container (ex: 'Minecraft Server', 'Plex')",
+        reason="Raison de l'interruption",
+        duration="Durée estimée (ex: '30 minutes', '2 heures')",
+        service_type="Type de service (auto-détecté si non spécifié)",
+        mention="Mentionner le rôle de notification (défaut: Oui)",
+        pause_monitor="Mettre en pause le monitoring UptimeKuma (défaut: Auto)"
+    )
+    @app_commands.choices(service_type=[
+        app_commands.Choice(name="🐳 Container", value="container"),
+        app_commands.Choice(name="📚 Stack", value="stack"),
+        app_commands.Choice(name="📦 Autre service", value="other"),
+    ])
+    @app_commands.autocomplete(service=service_autocomplete)
+    async def downtime_slash(
+        self, 
+        interaction: discord.Interaction, 
+        service: str, 
+        reason: str, 
+        duration: str = "Inconnue",
+        service_type: Optional[str] = None,
+        mention: bool = True,
+        pause_monitor: Optional[bool] = None
+    ):
+        """Announce service downtime via slash command"""
+        channel = get_announcement_channel(self.bot, interaction.channel)
+        
+        # Determine service type
+        if service_type:
+            svc_type = ServiceType(service_type)
+        else:
+            svc_type = self._get_service_type(service)
+        
+        embed = DowntimeEmbed.start(service, reason, duration, interaction.user, svc_type)
+        
+        notification_mention = get_notification_mention() if mention else None
+        
+        # Auto-pause UptimeKuma monitor if enabled
+        uptimekuma_paused = False
+        uptimekuma_monitor_id = None
+        should_pause = pause_monitor if pause_monitor is not None else (config and config.uptimekuma_auto_pause)
+        
+        if should_pause:
+            uptimekuma_paused, uptimekuma_monitor_id = await self._pause_uptimekuma_monitor(service)
+        
+        # Create interactive view with restore button
+        view = DowntimeView(
+            service=service,
+            author_id=interaction.user.id,
+            duration_str=duration,
+            announcement_channel=channel,
+            notification_mention=notification_mention,
+            service_type=svc_type,
+            uptimekuma_paused=uptimekuma_paused,
+            uptimekuma_monitor_id=uptimekuma_monitor_id
+        )
+        
+        # Send announcement with buttons
+        assert channel is not None
+        msg = await channel.send(
+            content=notification_mention,
+            embed=embed,
+            view=view
+        )
+        view.message = msg
+
+        # Create incident thread for discussion/updates
+        thread = await msg.create_thread(
+            name=f"🔧 {service} - Discussion Incident",
+            auto_archive_duration=1440  # Archive after 24h of inactivity
+        )
+        await thread.send(
+            f"📋 **Fil Incident** pour **{service}**\n\n"
+            f"Utilisez ce fil pour:\n"
+            f"• Poster des mises à jour\n"
+            f"• Partager logs ou messages d'erreur\n"
+            f"• Coordonner avec les autres\n"
+            f"• Documenter le post-mortem\n\n"
+            f"*Le fil sera archivé après 24h d'inactivité*"
+        )
+        view.incident_thread = thread
+        
+        # Start timer if duration was parsed
+        await view.start_timer()
+        
+        # Build response message
+        response_parts = [
+            f"✅ Annonce d'interruption envoyée pour **{service}** ({svc_type.label})",
+            f"💬 Fil d'incident créé: {thread.mention}",
+            f"💡 Cliquez sur le bouton de l'annonce pour marquer comme restauré."
+        ]
+        
+        if uptimekuma_paused:
+            response_parts.insert(1, f"⏸️ Monitoring UptimeKuma mis en pause (ID: {uptimekuma_monitor_id})")
+        
+        await interaction.response.send_message(
+            "\n".join(response_parts),
+            ephemeral=True
+        )
+
+    @app_commands.command(name="up", description="🟢 Annoncer la restauration d'un service")
+    @app_commands.describe(
+        service="Nom du service rétabli",
+        mention="Mentionner le rôle de notification (défaut: Non)",
+        resume_monitor="Reprendre le monitoring UptimeKuma (défaut: Oui)"
+    )
+    @app_commands.autocomplete(service=service_autocomplete)
+    async def up_slash(self, interaction: discord.Interaction, service: str, mention: bool = False, resume_monitor: bool = True):
+        """Announce service restoration via slash command"""
+        channel = get_announcement_channel(self.bot, interaction.channel)
+        service_type = self._get_service_type(service)
+        embed = DowntimeEmbed.end(service, interaction.user, service_type)
+        
+        # Resume UptimeKuma monitor if requested
+        uptimekuma_resumed = False
+        if resume_monitor and uptimekuma_module.uptimekuma_auth_client:
+            try:
+                await uptimekuma_module.uptimekuma_auth_client.connect()
+                success, monitor_id = await uptimekuma_module.uptimekuma_auth_client.resume_monitor_by_name(service)
+                uptimekuma_resumed = success
+                if success:
+                    print(f"[Downtime] Resumed UptimeKuma monitor for '{service}' (ID: {monitor_id})")
+            except Exception as e:
+                print(f"[Downtime] Error resuming UptimeKuma monitor: {e}")
+        
+        assert channel is not None
+        await channel.send(
+            content=get_notification_mention() if mention else None,
+            embed=embed
+        )
+
+        response = f"✅ Annonce de restauration envoyée pour **{service}** ({service_type.label})"
+        if uptimekuma_resumed:
+            response += "\n▶️ Monitoring UptimeKuma repris"
+        
+        await interaction.response.send_message(response, ephemeral=True)
+
+    @app_commands.command(name="maintenance", description="🔧 Annoncer une maintenance (màj, backup, config, etc.)")
+    @app_commands.describe(
+        service="Nom du service",
+        maintenance_type="Type de maintenance",
+        reason="Détails sur la maintenance",
+        duration="Durée estimée (ex: '30 minutes', '2 heures')",
+        service_type="Type de service (auto-détecté si non spécifié)",
+        mention="Mentionner le rôle de notification (défaut: Oui)",
+        pause_monitor="Mettre en pause le monitoring UptimeKuma (défaut: Auto)"
+    )
+    @app_commands.choices(maintenance_type=[
+        app_commands.Choice(name="⬆️ Mise à jour", value="update"),
+        app_commands.Choice(name="💾 Sauvegarde", value="backup"),
+        app_commands.Choice(name="⚙️ Config", value="config"),
+        app_commands.Choice(name="🔒 Patch sécurité", value="security"),
+        app_commands.Choice(name="🚚 Migration", value="migration"),
+        app_commands.Choice(name="🛠️ Autre", value="other"),
+    ])
+    @app_commands.choices(service_type=[
+        app_commands.Choice(name="🐳 Container", value="container"),
+        app_commands.Choice(name="📚 Stack", value="stack"),
+        app_commands.Choice(name="📦 Autre service", value="other"),
+    ])
+    @app_commands.autocomplete(service=service_autocomplete)
+    async def maintenance_slash(
+        self, 
+        interaction: discord.Interaction, 
+        service: str,
+        maintenance_type: str,
+        reason: str,
+        duration: str = "Inconnue",
+        service_type: Optional[str] = None,
+        mention: bool = True,
+        pause_monitor: Optional[bool] = None
+    ):
+        """Announce a maintenance action (update, backup, etc.) via slash command"""
+        channel = get_announcement_channel(self.bot, interaction.channel)
+        
+        # Determine service type
+        if service_type:
+            svc_type = ServiceType(service_type)
+        else:
+            svc_type = self._get_service_type(service)
+        
+        # Get maintenance type enum
+        try:
+            maint_type = MaintenanceType(maintenance_type)
+        except ValueError:
+            maint_type = MaintenanceType.OTHER
+        
+        embed = DowntimeEmbed.maintenance(
+            service, reason, duration, interaction.user, svc_type, maint_type
+        )
+        
+        notification_mention = get_notification_mention() if mention else None
+        
+        # Auto-pause UptimeKuma monitor if enabled
+        uptimekuma_paused = False
+        uptimekuma_monitor_id = None
+        should_pause = pause_monitor if pause_monitor is not None else (config and config.uptimekuma_auto_pause)
+        
+        if should_pause:
+            uptimekuma_paused, uptimekuma_monitor_id = await self._pause_uptimekuma_monitor(service)
+        
+        # Create interactive view with restore button
+        view = DowntimeView(
+            service=service,
+            author_id=interaction.user.id,
+            duration_str=duration,
+            announcement_channel=channel,
+            notification_mention=notification_mention,
+            service_type=svc_type,
+            uptimekuma_paused=uptimekuma_paused,
+            uptimekuma_monitor_id=uptimekuma_monitor_id
+        )
+        
+        # Send announcement with buttons
+        assert channel is not None
+        msg = await channel.send(
+            content=notification_mention,
+            embed=embed,
+            view=view
+        )
+        view.message = msg
+
+        # Create thread for updates
+        thread = await msg.create_thread(
+            name=f"{maint_type.icon} {service} - {maint_type.label}",
+            auto_archive_duration=1440
+        )
+        await thread.send(
+            f"📋 **Fil {maint_type.label}** pour **{service}**\n\n"
+            f"Utilisez ce fil pour:\n"
+            f"• Poster des mises à jour\n"
+            f"• Partager logs ou statut\n"
+            f"• Coordonner avec les autres\n\n"
+            f"*Le fil sera archivé après 24h d'inactivité*"
+        )
+        view.incident_thread = thread
+        
+        # Build response message
+        response_parts = [
+            f"✅ {maint_type.icon} Annonce **{maint_type.label}** envoyée pour **{service}** ({svc_type.label})",
+            f"💬 Fil créé: {thread.mention}",
+            f"💡 Cliquez sur le bouton de l'annonce pour marquer comme terminé."
+        ]
+        
+        if uptimekuma_paused:
+            response_parts.insert(1, f"⏸️ Monitoring UptimeKuma mis en pause (ID: {uptimekuma_monitor_id})")
+        
+        await interaction.response.send_message(
+            "\n".join(response_parts),
+            ephemeral=True
+        )
+
+    @app_commands.command(name="scheduled", description="📅 Planifier une maintenance future")
+    @app_commands.describe(
+        service="Nom du service",
+        when="Date/heure (format: YYYY-MM-DD HH:MM, ex: '2026-01-15 22:00')",
+        duration="Durée estimée (ex: '30 minutes', '2 heures')",
+        reason="Raison de la maintenance",
+        maintenance_type="Type de maintenance (défaut: downtime)",
+        mention="Mentionner le rôle de notification (défaut: Oui)"
+    )
+    @app_commands.choices(maintenance_type=[
+        app_commands.Choice(name="🔧 Interruption", value="downtime"),
+        app_commands.Choice(name="⬆️ Mise à jour", value="update"),
+        app_commands.Choice(name="💾 Sauvegarde", value="backup"),
+        app_commands.Choice(name="⚙️ Config", value="config"),
+        app_commands.Choice(name="🔒 Patch sécurité", value="security"),
+        app_commands.Choice(name="🚚 Migration", value="migration"),
+        app_commands.Choice(name="🛠️ Autre", value="other"),
+    ])
+    @app_commands.autocomplete(service=service_autocomplete)
+    async def scheduled_slash(
+        self, 
+        interaction: discord.Interaction, 
+        service: str, 
+        when: str, 
+        duration: str, 
+        reason: str,
+        maintenance_type: str = "downtime",
+        mention: bool = True
+    ):
+        """Announce scheduled maintenance via slash command with auto-trigger"""
+        # Parse the datetime
+        try:
+            scheduled_time = datetime.strptime(when, "%Y-%m-%d %H:%M")
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Format de date invalide ! Utilisez: `YYYY-MM-DD HH:MM`\n"
+                "Exemple: `2026-01-15 22:00`",
+                ephemeral=True
+            )
+            return
+        
+        # Check if the time is in the future
+        if scheduled_time <= datetime.now():
+            await interaction.response.send_message(
+                "❌ La date doit être dans le futur !",
+                ephemeral=True
+            )
+            return
+        
+        channel = get_announcement_channel(self.bot, interaction.channel)
+        service_type = self._get_service_type(service)
+        
+        # Get maintenance type enum
+        try:
+            maint_type = MaintenanceType(maintenance_type)
+        except ValueError:
+            maint_type = MaintenanceType.DOWNTIME
+        
+        # Format the time nicely for display
+        when_display = scheduled_time.strftime("%A %d %B %Y à %H:%M")
+        embed = DowntimeEmbed.scheduled(
+            service, when_display, duration, reason, 
+            interaction.user, service_type, maint_type
+        )
+        
+        # Add auto-trigger info to embed
+        embed.add_field(
+            name="⏰ Déclenchement auto",
+            value=f"{maint_type.label} démarrera automatiquement le <t:{int(scheduled_time.timestamp())}:F>",
+            inline=False
+        )
+        
+        assert channel is not None
+        assert interaction.channel is not None
+        await channel.send(
+            content=get_notification_mention() if mention else None,
+            embed=embed
+        )
+
+        # Schedule the automatic trigger
+        maintenance = ScheduledMaintenance(
+            service=service,
+            scheduled_time=scheduled_time,
+            duration=duration,
+            reason=reason,
+            author_id=interaction.user.id,
+            channel_id=interaction.channel.id,
+            maintenance_type=maintenance_type
+        )
+        self._scheduled_maintenances.append(maintenance)
+        self._save_scheduled_maintenances()
+        
+        await interaction.response.send_message(
+            f"✅ Maintenance **{maint_type.label.lower()}** planifiée pour **{service}** ({service_type.label})\n"
+            f"⏰ {maint_type.label} se déclenchera automatiquement le <t:{int(scheduled_time.timestamp())}:F>\n"
+            f"📋 {len(self._scheduled_maintenances)} maintenance(s) planifiée(s)\n"
+            f"💾 Sauvegardé sur disque (persistera après redémarrage)",
+            ephemeral=True
+        )
+    
+    @app_commands.command(name="scheduled-list", description="📋 Lister les maintenances planifiées")
+    async def scheduled_list_slash(self, interaction: discord.Interaction):
+        """List all pending scheduled maintenances"""
+        if not self._scheduled_maintenances:
+            await interaction.response.send_message(
+                "📋 Aucune maintenance planifiée.",
+                ephemeral=True
+            )
+            return
+        
+        embed = discord.Embed(
+            title="📋 Maintenances Planifiées",
+            color=0x3498DB
+        )
+        
+        for i, m in enumerate(self._scheduled_maintenances, 1):
+            # Get maintenance type info
+            try:
+                maint_type = MaintenanceType(m.maintenance_type)
+            except ValueError:
+                maint_type = MaintenanceType.DOWNTIME
+            
+            embed.add_field(
+                name=f"{i}. {maint_type.icon} {m.service}",
+                value=f"🏷️ Type: **{maint_type.label}**\n"
+                      f"⏰ <t:{int(m.scheduled_time.timestamp())}:F>\n"
+                      f"⏱️ Durée: {m.duration}\n"
+                      f"📝 {m.reason}",
+                inline=False
+            )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="scheduled-cancel", description="❌ Annuler une maintenance planifiée")
+    @app_commands.describe(service="Nom du service dont la maintenance doit être annulée")
+    @app_commands.autocomplete(service=service_autocomplete)
+    async def scheduled_cancel_slash(self, interaction: discord.Interaction, service: str):
+        """Cancel a scheduled maintenance"""
+        for m in self._scheduled_maintenances[:]:
+            if m.service.lower() == service.lower():
+                self._scheduled_maintenances.remove(m)
+                self._save_scheduled_maintenances()
+                await interaction.response.send_message(
+                    f"✅ Maintenance planifiée pour **{service}** annulée.\n"
+                    f"💾 Modifications sauvegardées.",
+                    ephemeral=True
+                )
+                return
+        
+        await interaction.response.send_message(
+            f"❌ Aucune maintenance planifiée pour **{service}**",
+            ephemeral=True
+        )
+
+    # ========== Prefix Commands ==========
+    
+    @commands.command(name="down")
+    async def down_prefix(self, ctx: commands.Context, service: str, *, reason: str = "Maintenance"):
+        """Quick downtime announcement: !down "Service Name" Reason here"""
+        channel = get_announcement_channel(self.bot, ctx.channel)
+        service_type = self._get_service_type(service)
+        embed = DowntimeEmbed.start(service, reason, "Inconnue", ctx.author, service_type)
+        
+        notification_mention = get_notification_mention()
+        
+        # Create interactive view with restore button
+        view = DowntimeView(
+            service=service,
+            author_id=ctx.author.id,
+            duration_str="Inconnue",
+            announcement_channel=channel,
+            notification_mention=notification_mention,
+            service_type=service_type
+        )
+        
+        assert channel is not None
+        msg = await channel.send(
+            content=notification_mention,
+            embed=embed,
+            view=view
+        )
+        view.message = msg
+
+        # Create incident thread
+        thread = await msg.create_thread(
+            name=f"🔧 {service} - Discussion Incident",
+            auto_archive_duration=1440
+        )
+        await thread.send(
+            f"📋 **Fil Incident** pour **{service}**\n\n"
+            f"Utilisez ce fil pour poster des mises à jour et coordonner."
+        )
+        view.incident_thread = thread
+
+        await ctx.message.add_reaction("✅")
+
+    @commands.command(name="up")
+    async def up_prefix(self, ctx: commands.Context, *, service: str):
+        """Quick service restored: !up Service Name"""
+        channel = get_announcement_channel(self.bot, ctx.channel)
+        service_type = self._get_service_type(service)
+        embed = DowntimeEmbed.end(service, ctx.author, service_type)
+        assert channel is not None
+        await channel.send(embed=embed)
+        await ctx.message.add_reaction("✅")
+
+
+async def setup(bot: commands.Bot):
+    """Load the cog"""
+    await bot.add_cog(DowntimeCog(bot))
