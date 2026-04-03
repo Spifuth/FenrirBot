@@ -9,64 +9,6 @@ import aiohttp
 import asyncio
 
 from ..config import config
-from ..utils.helpers import (
-    create_progress_bar,
-    is_netdata_configured,
-    create_error_embed,
-    THRESHOLDS
-)
-
-
-class NetdataStatus:
-    """Status information from Netdata API"""
-    def __init__(self, data: dict):
-        self.hostname = data.get("hostname", "Unknown")
-        self.os = data.get("os_name", "Unknown")
-        self.os_version = data.get("os_version", "")
-        self.kernel = data.get("kernel_name", "")
-        self.architecture = data.get("architecture", "")
-        self.cores = self._to_int(data.get("cores_total", 0))
-        self.memory_total = self._to_int(data.get("ram_total", 0))  # in bytes
-        self.uptime = self._to_float(data.get("uptime", 0))
-    
-    @staticmethod
-    def _to_int(value) -> int:
-        """Convert value to int, handling string representations"""
-        try:
-            return int(value) if value else 0
-        except (ValueError, TypeError):
-            return 0
-    
-    @staticmethod
-    def _to_float(value) -> float:
-        """Convert value to float, handling string representations"""
-        try:
-            return float(value) if value else 0.0
-        except (ValueError, TypeError):
-            return 0.0
-        
-    @property
-    def memory_total_gb(self) -> float:
-        """Get total memory in GB"""
-        return self.memory_total / (1024 ** 3) if self.memory_total else 0
-    
-    @property
-    def uptime_str(self) -> str:
-        """Get uptime as a readable string"""
-        seconds = int(self.uptime)
-        days, remainder = divmod(seconds, 86400)
-        hours, remainder = divmod(remainder, 3600)
-        minutes, _ = divmod(remainder, 60)
-        
-        parts = []
-        if days > 0:
-            parts.append(f"{days}d")
-        if hours > 0:
-            parts.append(f"{hours}h")
-        if minutes > 0 or not parts:
-            parts.append(f"{minutes}m")
-        
-        return " ".join(parts)
 
 
 class NetdataAlarm:
@@ -149,149 +91,15 @@ class NetdataCog(commands.Cog):
             print(f"Netdata API error: {e}")
             return None
     
-    async def _fetch_metric(self, chart: str, after: int = -60, points: int = 1) -> Optional[dict]:
-        """Fetch a specific metric chart"""
-        endpoint = f"data?chart={chart}&after={after}&points={points}&format=json"
-        return await self._fetch_data(endpoint)
-    
     # ═══════════════════════════════════════════════════════════════
     # Slash Commands
     # ═══════════════════════════════════════════════════════════════
-    
+
     netdata_group = app_commands.Group(
         name="netdata",
         description="🖥️ Commandes de monitoring système Netdata"
     )
-    
-    @netdata_group.command(name="status", description="📊 Afficher l'état actuel du système")
-    async def netdata_status(self, interaction: discord.Interaction):
-        """Show current system status from Netdata"""
-        await interaction.response.defer(thinking=True)
-        
-        if not self.netdata_url:
-            embed = discord.Embed(
-                title="❌ Netdata Non Configuré",
-                description="L'URL de Netdata n'est pas configurée.\n\nAjoute `NETDATA_URL` dans ton fichier `.env`",
-                color=0xFF4444
-            )
-            await interaction.followup.send(embed=embed)
-            return
-        
-        # Fetch system info
-        info_data = await self._fetch_data("info")
-        if not info_data:
-            embed = discord.Embed(
-                title="❌ Erreur de Connexion",
-                description=f"Impossible de se connecter à Netdata:\n`{self.netdata_url}`",
-                color=0xFF4444
-            )
-            await interaction.followup.send(embed=embed)
-            return
-        
-        status = NetdataStatus(info_data)
-        
-        # Fetch current metrics
-        cpu_data = await self._fetch_metric("system.cpu")
-        ram_data = await self._fetch_metric("system.ram")
-        disk_data = await self._fetch_metric("disk_space._")
-        
-        embed = discord.Embed(
-            title=f"🖥️ État Système - {status.hostname}",
-            color=0x5865F2,
-            timestamp=datetime.now()
-        )
-        
-        # System info
-        os_info = f"{status.os} {status.os_version}"
-        if status.kernel:
-            os_info += f" ({status.kernel})"
-        
-        embed.add_field(
-            name="💻 Système",
-            value=f"**OS:** {os_info}\n**Arch:** {status.architecture}\n**Cores:** {status.cores}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="⏱️ Uptime",
-            value=f"`{status.uptime_str}`",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="🧠 RAM Totale",
-            value=f"`{status.memory_total_gb:.1f} GB`",
-            inline=True
-        )
-        
-        # CPU Usage
-        if cpu_data and "data" in cpu_data:
-            try:
-                # Sum all CPU categories except idle
-                values = cpu_data["data"][0][1:]  # Skip timestamp
-                labels = cpu_data.get("labels", [])
-                
-                # Find idle index and calculate usage
-                idle_idx = labels.index("idle") if "idle" in labels else -1
-                if idle_idx > 0:
-                    cpu_usage = 100 - values[idle_idx - 1]  # -1 because we skipped timestamp
-                else:
-                    cpu_usage = sum(values)
-                
-                bar = create_progress_bar(cpu_usage, "cpu")
-                embed.add_field(name="🖥️ CPU", value=bar, inline=False)
-            except (IndexError, KeyError):
-                pass
-        
-        # RAM Usage
-        if ram_data and "data" in ram_data:
-            try:
-                values = ram_data["data"][0][1:]
-                labels = ram_data.get("labels", [])
-                
-                # Calculate used percentage
-                total = sum(abs(v) for v in values if v)
-                free_idx = labels.index("free") if "free" in labels else -1
-                cached_idx = labels.index("cached") if "cached" in labels else -1
-                buffers_idx = labels.index("buffers") if "buffers" in labels else -1
-                
-                free = abs(values[free_idx - 1]) if free_idx > 0 else 0
-                cached = abs(values[cached_idx - 1]) if cached_idx > 0 else 0
-                buffers = abs(values[buffers_idx - 1]) if buffers_idx > 0 else 0
-                
-                # Available = free + cached + buffers
-                available = free + cached + buffers
-                used_pct = ((total - available) / total * 100) if total > 0 else 0
-                
-                bar = create_progress_bar(used_pct, "ram")
-                embed.add_field(name="🧠 RAM", value=bar, inline=False)
-            except (IndexError, KeyError, ZeroDivisionError):
-                pass
-        
-        # Disk Usage
-        if disk_data and "data" in disk_data:
-            try:
-                values = disk_data["data"][0][1:]
-                labels = disk_data.get("labels", [])
-                
-                avail_idx = labels.index("avail") if "avail" in labels else -1
-                used_idx = labels.index("used") if "used" in labels else -1
-                
-                if avail_idx > 0 and used_idx > 0:
-                    avail = abs(values[avail_idx - 1])
-                    used = abs(values[used_idx - 1])
-                    total = avail + used
-                    used_pct = (used / total * 100) if total > 0 else 0
-                    
-                    bar = create_progress_bar(used_pct, "disk")
-                    embed.add_field(name="💾 Disque (/)", value=bar, inline=False)
-            except (IndexError, KeyError, ZeroDivisionError):
-                pass
-        
-        embed.set_footer(text="🐺 Fenrir • Netdata Monitor")
-        
-        await interaction.followup.send(embed=embed)
-    
+
     @netdata_group.command(name="alarms", description="🚨 Afficher les alertes actives")
     async def netdata_alarms(self, interaction: discord.Interaction):
         """Show active alarms from Netdata"""
@@ -386,53 +194,6 @@ class NetdataCog(commands.Cog):
         embed.set_footer(text="🐺 Fenrir • Netdata Monitor")
         
         await interaction.followup.send(embed=embed)
-    
-    @netdata_group.command(name="test", description="🧪 Envoyer une alerte de test")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def netdata_test(self, interaction: discord.Interaction):
-        """Send a test alert to verify webhook is working"""
-        # Check if webhook server is configured
-        if not self.bot.webhook_server:
-            embed = discord.Embed(
-                title="❌ Webhook Non Activé",
-                description="Le serveur webhook n'est pas activé.\n\nActive `WEBHOOK_ENABLED=true` dans ton `.env`",
-                color=0xFF4444
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        # Send test alert through the webhook handler
-        await self.bot.webhook_server._send_alert(
-            title="🧪 [TEST] Alert de Test Netdata",
-            description=(
-                "**CLEAR** → **WARNING**\n\n"
-                "⚠️ **CPU**\n"
-                "🟨🟨🟨🟨🟨🟨🟨🟨⬜⬜ **78.5%**\n\n"
-                "📋 Ceci est une alerte de test pour vérifier l'intégration Netdata."
-            ),
-            color=0xFFAA00,
-            fields=[
-                {"name": "🖥️ Host", "value": "`test-server`", "inline": True},
-                {"name": "📈 Chart", "value": "`system.cpu`", "inline": True},
-            ],
-            source="Netdata (Test)"
-        )
-        
-        embed = discord.Embed(
-            title="✅ Alerte de Test Envoyée",
-            description="Vérifie le canal d'annonces pour voir l'alerte de test.",
-            color=0x44FF44
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    
-    @netdata_test.error
-    async def netdata_test_error(self, interaction: discord.Interaction, error):
-        """Handle permission errors for test command"""
-        if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                "❌ Tu as besoin des permissions d'administrateur pour cette commande.",
-                ephemeral=True
-            )
 
 
 async def setup(bot: commands.Bot):

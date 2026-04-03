@@ -96,7 +96,7 @@ class MetricStats:
         return bar_char * filled + "⬜" * empty
 
 
-@dataclass 
+@dataclass
 class ServerReport:
     """Complete server statistics report"""
     hostname: str
@@ -127,6 +127,7 @@ class ReportsCog(commands.Cog):
         self.monthly_day = 1  # 1st of month
         self.monthly_time = time(hour=10, minute=0) # 10:00 AM on 1st
         
+
         # Historical data storage
         self.stats_history: List[Dict] = []
         self._load_history()
@@ -187,20 +188,33 @@ class ReportsCog(commands.Cog):
         """Get metric data with multiple points for analysis"""
         endpoint = f"data?chart={chart}&after={after}&points={points}&format=json&options=absolute"
         return await self._fetch_netdata(endpoint)
-    
+
+
+    async def _get_system_uptime(self, info: dict) -> int:
+        """Get system uptime in seconds — falls back to system.uptime chart for Netdata v2"""
+        uptime = int(info.get("uptime", 0))
+        if uptime == 0:
+            uptime_data = await self._get_metric_data("system.uptime", after=-60, points=1)
+            if uptime_data and "data" in uptime_data:
+                try:
+                    values = uptime_data["data"][0][1:]
+                    uptime = int(values[0]) if values else 0
+                except Exception:
+                    pass
+        return uptime
+
     async def _collect_current_stats(self) -> Dict[str, float]:
         """Collect current statistics from Netdata"""
         stats = {
             'timestamp': datetime.now().timestamp(),
             'cpu': 0.0,
             'ram': 0.0,
-            'disk': 0.0,
             'net_in': 0.0,
             'net_out': 0.0,
             'temp': 0.0,
             'load': 0.0,
         }
-        
+
         # CPU
         cpu_data = await self._get_metric_data("system.cpu", after=-60, points=1)
         if cpu_data and "data" in cpu_data:
@@ -212,9 +226,9 @@ class ReportsCog(commands.Cog):
                     stats['cpu'] = 100 - values[idle_idx]
                 else:
                     stats['cpu'] = sum(v for v in values if v and v > 0)
-            except:
-                pass
-        
+            except Exception as e:
+                print(f"  ⚠️ Error fetching CPU stats: {e}")
+
         # RAM
         ram_data = await self._get_metric_data("system.ram", after=-60, points=1)
         if ram_data and "data" in ram_data:
@@ -225,7 +239,7 @@ class ReportsCog(commands.Cog):
                 free_idx = labels.index("free") - 1 if "free" in labels else -1
                 cached_idx = labels.index("cached") - 1 if "cached" in labels else -1
                 buffers_idx = labels.index("buffers") - 1 if "buffers" in labels else -1
-                
+
                 if used_idx >= 0:
                     used = abs(values[used_idx])
                     free = abs(values[free_idx]) if free_idx >= 0 else 0
@@ -234,27 +248,10 @@ class ReportsCog(commands.Cog):
                     total = used + free + cached + buffers
                     if total > 0:
                         stats['ram'] = (used / total) * 100
-            except:
-                pass
-        
-        # Disk
-        disk_data = await self._get_metric_data("disk_space._", after=-60, points=1)
-        if disk_data and "data" in disk_data:
-            try:
-                values = disk_data["data"][0][1:]
-                labels = disk_data.get("labels", [])
-                avail_idx = labels.index("avail") - 1 if "avail" in labels else -1
-                used_idx = labels.index("used") - 1 if "used" in labels else -1
-                
-                if avail_idx >= 0 and used_idx >= 0:
-                    avail = abs(values[avail_idx])
-                    used = abs(values[used_idx])
-                    total = avail + used
-                    if total > 0:
-                        stats['disk'] = (used / total) * 100
-            except:
-                pass
-        
+            except Exception as e:
+                print(f"  ⚠️ Error fetching RAM stats: {e}")
+
+        # Disk — auto-discover chart name on first run
         # Network
         net_data = await self._get_metric_data("system.net", after=-60, points=1)
         if net_data and "data" in net_data:
@@ -263,23 +260,23 @@ class ReportsCog(commands.Cog):
                 labels = net_data.get("labels", [])
                 recv_idx = labels.index("received") - 1 if "received" in labels else -1
                 sent_idx = labels.index("sent") - 1 if "sent" in labels else -1
-                
+
                 if recv_idx >= 0:
                     stats['net_in'] = abs(values[recv_idx]) / 1000  # Convert to Mbps
                 if sent_idx >= 0:
                     stats['net_out'] = abs(values[sent_idx]) / 1000
-            except:
-                pass
-        
+            except Exception as e:
+                print(f"  ⚠️ Error fetching network stats: {e}")
+
         # Load
         load_data = await self._get_metric_data("system.load", after=-60, points=1)
         if load_data and "data" in load_data:
             try:
                 values = load_data["data"][0][1:]
                 stats['load'] = values[0] if values else 0
-            except:
-                pass
-        
+            except Exception as e:
+                print(f"  ⚠️ Error fetching load stats: {e}")
+
         return stats
     
     def _analyze_period(self, period: ReportPeriod) -> Dict[str, MetricStats]:
@@ -299,7 +296,6 @@ class ReportsCog(commands.Cog):
         metric_defs = [
             ('cpu', '🖥️ CPU', '%'),
             ('ram', '🧠 RAM', '%'),
-            ('disk', '💾 Disque', '%'),
             ('net_in', '📥 Network In', 'Mbps'),
             ('net_out', '📤 Network Out', 'Mbps'),
             ('load', '📊 Load', ''),
@@ -341,8 +337,8 @@ class ReportsCog(commands.Cog):
             return None
         
         hostname = info.get("hostname", "Unknown")
-        uptime = info.get("uptime", 0)
-        
+        uptime = await self._get_system_uptime(info)
+
         # Analyze metrics
         metrics = self._analyze_period(period)
         
@@ -359,7 +355,7 @@ class ReportsCog(commands.Cog):
             for alarm in alarms_data.get("alarms", {}).values():
                 if alarm.get("status") in ["WARNING", "CRITICAL"]:
                     alerts_count += 1
-        
+
         return ServerReport(
             hostname=hostname,
             period=period,
@@ -371,7 +367,7 @@ class ReportsCog(commands.Cog):
     
     def _create_report_embed(self, report: ServerReport) -> discord.Embed:
         """Create a Discord embed from a server report"""
-        
+
         # Determine color based on metrics
         color = 0x44FF44  # Green
         for metric in report.metrics.values():
@@ -380,73 +376,74 @@ class ReportsCog(commands.Cog):
                 break
             elif metric.average > 75:
                 color = 0xFFAA00  # Orange
-        
+
         embed = discord.Embed(
             title=f"{report.period.emoji} {report.period.title} - {report.hostname}",
-            description=f"Période : **{report.period.value}** | Généré le {report.generated_at.strftime('%d/%m/%Y à %H:%M')}",
+            description=f"Généré le {report.generated_at.strftime('%d/%m/%Y à %H:%M')}",
             color=color,
             timestamp=report.generated_at
         )
-        
-        # Uptime
+
+        # Uptime + Alerts row
         days, remainder = divmod(report.uptime_seconds, 86400)
         hours, remainder = divmod(remainder, 3600)
         minutes, _ = divmod(remainder, 60)
         uptime_str = f"{days}j {hours}h {minutes}m"
-        
-        embed.add_field(
-            name="⏱️ Uptime",
-            value=f"`{uptime_str}`",
-            inline=True
-        )
-        
-        # Alerts
+
+        embed.add_field(name="⏱️ Uptime", value=f"`{uptime_str}`", inline=True)
+
         alert_emoji = "✅" if report.alerts_count == 0 else "⚠️"
-        embed.add_field(
-            name=f"{alert_emoji} Alertes Actives",
-            value=f"`{report.alerts_count}`",
-            inline=True
-        )
-        
+        embed.add_field(name=f"{alert_emoji} Alertes", value=f"`{report.alerts_count}`", inline=True)
+
         embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
-        
-        # Metrics
-        for key in ['cpu', 'ram', 'disk', 'net_in', 'net_out', 'load']:
+
+        # % metrics: CPU, RAM — compact two-line format, inline=True
+        for key in ['cpu', 'ram']:
             metric = report.metrics.get(key)
             if not metric:
                 continue
-            
-            # Create visual bar for percentage metrics
-            if metric.unit == '%':
-                bar = metric.create_bar(metric.average)
-                current_bar = metric.create_bar(metric.current)
-                
-                value_text = (
-                    f"**Actuel:** {current_bar} {metric.format_value(metric.current)}\n"
-                    f"**Moyenne:** {bar} {metric.format_value(metric.average)}\n"
-                    f"📈 **Max:** {metric.format_value(metric.maximum)}"
-                )
-                if metric.peak_time:
-                    value_text += f" ({metric.peak_time.strftime('%d/%m %H:%M')})"
-                value_text += f"\n📉 **Min:** {metric.format_value(metric.minimum)}"
-                if metric.low_time:
-                    value_text += f" ({metric.low_time.strftime('%d/%m %H:%M')})"
-            else:
-                value_text = (
-                    f"**Actuel:** {metric.format_value(metric.current)}\n"
-                    f"**Moyenne:** {metric.format_value(metric.average)}\n"
-                    f"📈 **Max:** {metric.format_value(metric.maximum)}\n"
-                    f"📉 **Min:** {metric.format_value(metric.minimum)}"
-                )
-            
-            embed.add_field(
-                name=f"{metric.name}",
-                value=value_text,
-                inline=True
+
+            current_bar = metric.create_bar(metric.current)
+            value_text = (
+                f"{current_bar} {metric.format_value(metric.current)}\n"
+                f"Moy: {metric.format_value(metric.average)} | "
+                f"Max: {metric.format_value(metric.maximum)} | "
+                f"Min: {metric.format_value(metric.minimum)}"
             )
-        
+
+            embed.add_field(name=metric.name, value=value_text, inline=True)
+
+        # Network — combine in/out into one field
+        net_in = report.metrics.get('net_in')
+        net_out = report.metrics.get('net_out')
+        if net_in or net_out:
+            lines = []
+            if net_in:
+                lines.append(
+                    f"📥 **In:** Moy {net_in.format_value(net_in.average)} | Max {net_in.format_value(net_in.maximum)}"
+                )
+            if net_out:
+                lines.append(
+                    f"📤 **Out:** Moy {net_out.format_value(net_out.average)} | Max {net_out.format_value(net_out.maximum)}"
+                )
+            embed.add_field(name="🌐 Réseau", value="\n".join(lines), inline=False)
+
+        # Load
+        load = report.metrics.get('load')
+        if load:
+            embed.add_field(
+                name="📊 Load Avg",
+                value=(
+                    f"Actuel: `{load.current:.2f}` | "
+                    f"Moy: `{load.average:.2f}` | "
+                    f"📈 `{load.maximum:.2f}` | "
+                    f"📉 `{load.minimum:.2f}`"
+                ),
+                inline=False
+            )
+
         embed.set_footer(text="🐺 Fenrir Server Reports")
-        
+
         return embed
     
     async def _send_report(self, period: ReportPeriod):
@@ -455,8 +452,8 @@ class ReportsCog(commands.Cog):
             return
         
         channel = self.bot.get_channel(self.reports_channel_id)
-        if not channel:
-            print(f"  ⚠️ Reports channel {self.reports_channel_id} not found")
+        if not channel or not isinstance(channel, discord.abc.Messageable):
+            print(f"  ⚠️ Reports channel {self.reports_channel_id} not found or not messageable")
             return
         
         report = await self._generate_report(period)
@@ -598,8 +595,8 @@ class ReportsCog(commands.Cog):
             return
         
         hostname = info.get("hostname", "Unknown")
-        uptime = info.get("uptime", 0)
-        
+        uptime = await self._get_system_uptime(info)
+
         # Create embed
         embed = discord.Embed(
             title=f"⚡ État Instantané - {hostname}",
@@ -616,8 +613,7 @@ class ReportsCog(commands.Cog):
         
         cpu = stats.get('cpu', 0)
         ram = stats.get('ram', 0)
-        disk = stats.get('disk', 0)
-        
+
         embed.add_field(
             name="🖥️ CPU",
             value=create_progress_bar(cpu, "cpu"),
@@ -628,12 +624,7 @@ class ReportsCog(commands.Cog):
             value=create_progress_bar(ram, "ram"),
             inline=False
         )
-        embed.add_field(
-            name="💾 Disque",
-            value=create_progress_bar(disk, "disk"),
-            inline=False
-        )
-        
+
         net_in = stats.get('net_in', 0)
         net_out = stats.get('net_out', 0)
         embed.add_field(
