@@ -12,7 +12,7 @@ class WebhookServer:
     """HTTP server for receiving webhook alerts"""
     
     def __init__(
-        self, 
+        self,
         bot: discord.Client,
         host: str = "0.0.0.0",
         port: int = 8080,
@@ -26,7 +26,8 @@ class WebhookServer:
         self.runner: Optional[web.AppRunner] = None
         self.channel_id: Optional[int] = None
         self.notification_mention: str = "@here"
-        
+        self.start_time: datetime = datetime.now()
+
         # Setup routes
         self.app.router.add_post("/webhook/generic", self.handle_generic)
         self.app.router.add_post("/webhook/prometheus", self.handle_prometheus)
@@ -34,6 +35,7 @@ class WebhookServer:
         self.app.router.add_post("/webhook/uptimekuma", self.handle_uptimekuma)
         self.app.router.add_post("/webhook/netdata", self.handle_netdata)
         self.app.router.add_get("/health", self.health_check)
+        self.app.router.add_get("/metrics", self.metrics)
     
     def set_channel(self, channel_id: int):
         """Set the channel to send alerts to"""
@@ -117,7 +119,18 @@ class WebhookServer:
             "bot_ready": self.bot.is_ready(),
             "timestamp": datetime.now().isoformat()
         })
-    
+
+    async def metrics(self, request: web.Request) -> web.Response:
+        """Bot metrics endpoint for Glance dashboard"""
+        uptime = (datetime.now() - self.start_time).total_seconds()
+        return web.json_response({
+            "bot_ready": self.bot.is_ready(),
+            "guilds": len(self.bot.guilds) if self.bot.is_ready() else 0,
+            "latency_ms": round(self.bot.latency * 1000, 1),
+            "uptime_seconds": round(uptime),
+            "cogs_loaded": len(self.bot.cogs),
+        })
+
     async def handle_generic(self, request: web.Request) -> web.Response:
         """Handle generic webhook alerts
         
