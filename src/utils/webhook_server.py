@@ -1,4 +1,4 @@
-"""Webhook server for receiving external alerts (Prometheus, Grafana, UptimeKuma, etc.)"""
+"""Webhook server for receiving external alerts (Prometheus, Grafana, Generic)"""
 
 import asyncio
 import json

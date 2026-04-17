@@ -5,7 +5,7 @@ import json
 from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
 

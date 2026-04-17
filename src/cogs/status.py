@@ -3,11 +3,9 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime
 
 from ..utils.embeds import DowntimeEmbed
 from ..utils.helpers import get_announcement_channel, get_notification_mention
-from ..config import config
 
 
 class StatusCog(commands.Cog, name="Status"):
