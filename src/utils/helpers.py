@@ -33,13 +33,6 @@ def get_announcement_channel(bot: discord.Client, fallback: Optional[discord.abc
     return fallback
 
 
-def get_reports_channel(bot: discord.Client) -> Optional[discord.TextChannel]:
-    """Get the configured reports channel"""
-    if config and config.reports_channel_id:
-        return bot.get_channel(config.reports_channel_id)
-    return None
-
-
 def get_notification_mention() -> str:
     """Get the role mention string or fall back to @here"""
     if config and config.notification_role_id:
@@ -314,14 +307,6 @@ def get_config_value(key: str, default=None):
     return default
 
 
-def is_netdata_configured() -> bool:
-    """Check if Netdata is properly configured"""
-    return bool(get_config_value('netdata_url', ''))
-
-
-def is_uptimekuma_configured() -> bool:
-    """Check if UptimeKuma is properly configured"""
-    return bool(get_config_value('uptimekuma_url', ''))
 
 
 def is_webhook_enabled() -> bool:
