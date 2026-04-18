@@ -1,7 +1,6 @@
 """Grafana REST API client"""
 
 import aiohttp
-from typing import Optional
 
 
 class GrafanaClient:
