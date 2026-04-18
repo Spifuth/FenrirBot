@@ -78,3 +78,5 @@ Discord-facing messages (command descriptions, announcements, responses) are pri
 | `WEBHOOK_SECRET` | Bearer token for webhook auth (optional). |
 | `VICTORIAMETRICS_URL` | VictoriaMetrics base URL (e.g. `http://victoriametrics:8428`). |
 | `REPORTS_CHANNEL_ID` | Channel for auto-posted reports (optional). |
+| `GRAFANA_URL` | Grafana base URL (e.g. `http://grafana:3000`). |
+| `GRAFANA_API_KEY` | Grafana service account token (Viewer role). |

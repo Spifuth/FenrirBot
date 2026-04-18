@@ -20,6 +20,8 @@ class Config:
     webhook_secret: str = ""
     victoriametrics_url: str = ""
     reports_channel_id: int = 0
+    grafana_url: str = ""
+    grafana_api_key: str = ""
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -42,6 +44,8 @@ class Config:
             webhook_secret=os.getenv("WEBHOOK_SECRET", ""),
             victoriametrics_url=os.getenv("VICTORIAMETRICS_URL", ""),
             reports_channel_id=int(os.getenv("REPORTS_CHANNEL_ID", "0")),
+            grafana_url=os.getenv("GRAFANA_URL", ""),
+            grafana_api_key=os.getenv("GRAFANA_API_KEY", ""),
         )
 
 
