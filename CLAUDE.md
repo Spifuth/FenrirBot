@@ -76,3 +76,5 @@ Discord-facing messages (command descriptions, announcements, responses) are pri
 | `WEBHOOK_ENABLED` | Start aiohttp webhook server (default: `false`). |
 | `WEBHOOK_PORT` | Webhook server port (default: `8085`). |
 | `WEBHOOK_SECRET` | Bearer token for webhook auth (optional). |
+| `VICTORIAMETRICS_URL` | VictoriaMetrics base URL (e.g. `http://victoriametrics:8428`). |
+| `REPORTS_CHANNEL_ID` | Channel for auto-posted reports (optional). |

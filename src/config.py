@@ -18,6 +18,8 @@ class Config:
     webhook_host: str = "0.0.0.0"
     webhook_port: int = 8085
     webhook_secret: str = ""
+    victoriametrics_url: str = ""
+    reports_channel_id: int = 0
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -38,6 +40,8 @@ class Config:
             webhook_host=os.getenv("WEBHOOK_HOST", "0.0.0.0"),
             webhook_port=int(os.getenv("WEBHOOK_PORT", "8085")),
             webhook_secret=os.getenv("WEBHOOK_SECRET", ""),
+            victoriametrics_url=os.getenv("VICTORIAMETRICS_URL", ""),
+            reports_channel_id=int(os.getenv("REPORTS_CHANNEL_ID", "0")),
         )
 
 
