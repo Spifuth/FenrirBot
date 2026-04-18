@@ -16,6 +16,7 @@ class FenrirBot(commands.Bot):
         "src.cogs.status",
         "src.cogs.docker",
         "src.cogs.dashboard",
+        "src.cogs.reports",
     ]
 
     def __init__(self):
