@@ -25,7 +25,7 @@ def _alert_duration(starts_at: str) -> str:
         h = total // 3600
         m = (total % 3600) // 60
         return f"{h}h {m}m" if m else f"{h}h"
-    except (ValueError, AttributeError):
+    except ValueError:
         return ""
 
 
@@ -47,7 +47,7 @@ def _summary_description(alerts: list[dict]) -> str:
     n_warning = sum(1 for a in alerts if a.get("labels", {}).get("severity") == "warning")
     parts = []
     if n_critical:
-        parts.append(f"{n_critical} critique")
+        parts.append(f"{n_critical} critique{'s' if n_critical > 1 else ''}")
     if n_warning:
         parts.append(f"{n_warning} avertissement{'s' if n_warning > 1 else ''}")
     if not parts:
@@ -69,7 +69,6 @@ class AlertsCog(commands.Cog, name="Alerts"):
 
     @app_commands.command(name="alerts", description="🚨 Afficher les alertes Grafana actives")
     async def alerts_slash(self, interaction: discord.Interaction):
-        """Display currently firing Grafana alerts"""
         if not self.grafana:
             await interaction.response.send_message(
                 "❌ Grafana non configuré (`GRAFANA_URL` ou `GRAFANA_API_KEY` manquant).",
@@ -86,7 +85,7 @@ class AlertsCog(commands.Cog, name="Alerts"):
                 title="Aucune alerte",
                 description="Tous les systèmes sont opérationnels.",
                 color=0x2C2F33,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
             )
             embed.set_footer(text="Fenrir · Grafana")
             await interaction.followup.send(embed=embed)
@@ -96,7 +95,7 @@ class AlertsCog(commands.Cog, name="Alerts"):
             title=f"Alertes · {len(alerts)}",
             description=_summary_description(alerts),
             color=0x2C2F33,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         for alert in alerts[:10]:
@@ -113,7 +112,7 @@ class AlertsCog(commands.Cog, name="Alerts"):
                 inline=False,
             )
 
-        overflow = len(alerts) - 10
+        overflow = max(0, len(alerts) - 10)
         footer = "Fenrir · Grafana Alertmanager"
         if overflow > 0:
             footer += f" · +{overflow} non affichée(s)"
