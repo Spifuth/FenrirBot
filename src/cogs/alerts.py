@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 
 from ..config import config
 from ..utils.grafana import GrafanaClient
-from ..utils.helpers import get_status_color, get_status_emoji
+
+
+_SEV_WIDTH = 8  # len("CRITICAL") — all labels padded to this so · aligns
 
 
 def _alert_duration(starts_at: str) -> str:
@@ -25,6 +27,33 @@ def _alert_duration(starts_at: str) -> str:
         return f"{h}h {m}m" if m else f"{h}h"
     except (ValueError, AttributeError):
         return ""
+
+
+def _alert_field_value(severity: str, duration: str, instance: str, summary: str) -> str:
+    """Build the code-block value for one alert field."""
+    label = severity.upper().ljust(_SEV_WIDTH)
+    line1 = label + (f" · depuis {duration}" if duration else "")
+    lines = [line1]
+    if instance:
+        lines.append(instance)
+    if summary:
+        lines.append(summary[:100])
+    return "```\n" + "\n".join(lines) + "\n```"
+
+
+def _summary_description(alerts: list[dict]) -> str:
+    """Build '1 critique · 2 avertissements' description line."""
+    n_critical = sum(1 for a in alerts if a.get("labels", {}).get("severity") == "critical")
+    n_warning = sum(1 for a in alerts if a.get("labels", {}).get("severity") == "warning")
+    parts = []
+    if n_critical:
+        parts.append(f"{n_critical} critique")
+    if n_warning:
+        parts.append(f"{n_warning} avertissement{'s' if n_warning > 1 else ''}")
+    if not parts:
+        n = len(alerts)
+        parts.append(f"{n} alerte{'s' if n > 1 else ''}")
+    return " · ".join(parts)
 
 
 class AlertsCog(commands.Cog, name="Alerts"):
@@ -54,55 +83,41 @@ class AlertsCog(commands.Cog, name="Alerts"):
 
         if not alerts:
             embed = discord.Embed(
-                title="🟢 Aucune alerte active",
-                description="Tous les systèmes surveillés par Grafana fonctionnent normalement.",
-                color=0x44FF44,
+                title="Aucune alerte",
+                description="Tous les systèmes sont opérationnels.",
+                color=0x2C2F33,
                 timestamp=datetime.now(),
             )
-            embed.set_footer(text="🐺 Fenrir • Grafana Alertmanager")
+            embed.set_footer(text="Fenrir · Grafana")
             await interaction.followup.send(embed=embed)
             return
 
-        count = len(alerts)
-        highest_severity = "warning"
-        for alert in alerts:
-            if alert.get("labels", {}).get("severity") == "critical":
-                highest_severity = "critical"
-                break
-
         embed = discord.Embed(
-            title=f"🚨 {count} alerte(s) active(s)",
-            color=get_status_color(highest_severity),
+            title=f"Alertes · {len(alerts)}",
+            description=_summary_description(alerts),
+            color=0x2C2F33,
             timestamp=datetime.now(),
         )
 
         for alert in alerts[:10]:
             labels = alert.get("labels", {})
             annotations = alert.get("annotations", {})
-
             name = labels.get("alertname", "Alerte inconnue")
             severity = labels.get("severity", "warning")
             instance = labels.get("instance", labels.get("job", ""))
             summary = annotations.get("summary", annotations.get("description", ""))
-            starts_at = alert.get("startsAt", "")
+            duration = _alert_duration(alert.get("startsAt", ""))
+            embed.add_field(
+                name=name,
+                value=_alert_field_value(severity, duration, instance, summary),
+                inline=False,
+            )
 
-            emoji = get_status_emoji(severity)
-            duration = _alert_duration(starts_at)
-
-            lines = [f"{emoji} **{severity.upper()}**" + (f" — depuis {duration}" if duration else "")]
-            if instance:
-                lines.append(f"🖥️ `{instance}`")
-            if summary:
-                lines.append(summary[:120])
-
-            embed.add_field(name=name, value="\n".join(lines), inline=False)
-
-        overflow = count - 10
-        footer = "🐺 Fenrir • Grafana Alertmanager"
+        overflow = len(alerts) - 10
+        footer = "Fenrir · Grafana Alertmanager"
         if overflow > 0:
-            footer += f" • +{overflow} alerte(s) non affichée(s)"
+            footer += f" · +{overflow} non affichée(s)"
         embed.set_footer(text=footer)
-
         await interaction.followup.send(embed=embed)
 
 
