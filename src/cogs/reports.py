@@ -3,7 +3,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from ..config import config
@@ -88,7 +88,7 @@ class ReportsCog(commands.Cog, name="Reports"):
         await interaction.response.defer()
 
         period = _PERIODS[periode]
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         start = now - period["delta"]
         secs = period["seconds"]
 
