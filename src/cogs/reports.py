@@ -8,7 +8,6 @@ from typing import Optional
 
 from ..config import config
 from ..utils.victoriametrics import VictoriaMetricsClient
-from ..utils.helpers import create_progress_bar
 
 
 _PERIODS = {
@@ -33,17 +32,35 @@ _PERIODS = {
 }
 
 
+def _bar(value: float, width: int = 10) -> str:
+    """Render a fixed-width ASCII progress bar using █ and ·."""
+    filled = round(max(0.0, min(value, 100.0)) / 100 * width)
+    return "[" + "█" * filled + "·" * (width - filled) + "]"
+
+
 def _fmt_bytes(b: Optional[float]) -> str:
-    """Format a byte count as human-readable string."""
+    """Format byte count as a fixed-width right-aligned string for code blocks."""
     if b is None:
-        return "*N/A*"
+        return f"{'N/A':>10s}"
     gb = b / 1_073_741_824
     if gb >= 1:
-        return f"**{gb:.2f} GB**"
+        return f"{gb:>8.2f} GB"
     mb = b / 1_048_576
     if mb >= 1:
-        return f"**{mb:.1f} MB**"
-    return f"**{b / 1024:.1f} KB**"
+        return f"{mb:>8.1f} MB"
+    return f"{b / 1024:>8.1f} KB"
+
+
+def _stat_field(stats: Optional[dict]) -> str:
+    """Render avg/pic bar lines in a code block, or n/a if unavailable."""
+    if stats is None:
+        return "```\nn/a\n```"
+    return (
+        f"```\n"
+        f"avg  {_bar(stats['avg'])}  {stats['avg']:5.1f}%\n"
+        f"pic  {_bar(stats['max'])}  {stats['max']:5.1f}%\n"
+        f"```"
+    )
 
 
 class ReportsCog(commands.Cog, name="Reports"):
@@ -64,7 +81,7 @@ class ReportsCog(commands.Cog, name="Reports"):
         if not self.vm:
             await interaction.response.send_message(
                 "❌ VictoriaMetrics non configuré (`VICTORIAMETRICS_URL` manquant).",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -73,22 +90,16 @@ class ReportsCog(commands.Cog, name="Reports"):
         period = _PERIODS[periode]
         now = datetime.now()
         start = now - period["delta"]
-        step = period["step"]
         secs = period["seconds"]
 
-        # CPU average and peak over period
         cpu_stats = await self.vm.query_range_stats(
             '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100',
-            start, now, step,
+            start, now, period["step"],
         )
-
-        # RAM usage % average and peak
         ram_stats = await self.vm.query_range_stats(
             "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
-            start, now, step,
+            start, now, period["step"],
         )
-
-        # Total network bytes transferred over the full period (instant queries)
         net_rx = await self.vm.query_instant(
             f'sum(increase(node_network_receive_bytes_total{{device!="lo"}}[{secs}s]))'
         )
@@ -97,38 +108,18 @@ class ReportsCog(commands.Cog, name="Reports"):
         )
 
         embed = discord.Embed(
-            title=f"📊 Rapport serveur — {period['label']}",
-            color=0x5865F2,
+            title=f"Rapport · {period['label']}",
+            color=0x2C2F33,
             timestamp=now,
         )
-
-        if cpu_stats:
-            bar = create_progress_bar(cpu_stats["avg"], "cpu")
-            embed.add_field(
-                name="🖥️ CPU",
-                value=f"Moy: {bar}\nPic: **{cpu_stats['max']:.1f}%**",
-                inline=True,
-            )
-        else:
-            embed.add_field(name="🖥️ CPU", value="*Indisponible*", inline=True)
-
-        if ram_stats:
-            bar = create_progress_bar(ram_stats["avg"], "ram")
-            embed.add_field(
-                name="🧠 RAM",
-                value=f"Moy: {bar}\nPic: **{ram_stats['max']:.1f}%**",
-                inline=True,
-            )
-        else:
-            embed.add_field(name="🧠 RAM", value="*Indisponible*", inline=True)
-
+        embed.add_field(name="CPU", value=_stat_field(cpu_stats), inline=False)
+        embed.add_field(name="RAM", value=_stat_field(ram_stats), inline=False)
         embed.add_field(
-            name="🌐 Réseau",
-            value=f"↓ Reçu: {_fmt_bytes(net_rx)}\n↑ Envoyé: {_fmt_bytes(net_tx)}",
-            inline=True,
+            name="Réseau",
+            value=f"```\n↓  {_fmt_bytes(net_rx)}\n↑  {_fmt_bytes(net_tx)}\n```",
+            inline=False,
         )
-
-        embed.set_footer(text="🐺 Fenrir • Données VictoriaMetrics")
+        embed.set_footer(text="Fenrir · VictoriaMetrics")
         await interaction.followup.send(embed=embed)
 
 
