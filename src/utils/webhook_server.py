@@ -7,11 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import discord
 
-
-def _bar(value: float, width: int = 10) -> str:
-    """Render a fixed-width ASCII progress bar using █ and ·."""
-    filled = round(max(0.0, min(value, 100.0)) / 100 * width)
-    return "[" + "█" * filled + "·" * (width - filled) + "]"
+from .embeds import _bar
 
 
 class WebhookServer:
@@ -32,7 +28,7 @@ class WebhookServer:
         self.runner: Optional[web.AppRunner] = None
         self.channel_id: Optional[int] = None
         self.notification_mention: str = "@here"
-        self.start_time: datetime = datetime.now()
+        self.start_time: datetime = datetime.now(timezone.utc)
 
         # Setup routes
         self.app.router.add_post("/webhook/generic", self.handle_generic)
@@ -120,12 +116,12 @@ class WebhookServer:
         return web.json_response({
             "status": "ok",
             "bot_ready": self.bot.is_ready(),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
 
     async def metrics(self, request: web.Request) -> web.Response:
         """Bot metrics endpoint for Glance dashboard"""
-        uptime = (datetime.now() - self.start_time).total_seconds()
+        uptime = (datetime.now(timezone.utc) - self.start_time).total_seconds()
         return web.json_response({
             "bot_ready": self.bot.is_ready(),
             "guilds": len(self.bot.guilds) if self.bot.is_ready() else 0,
