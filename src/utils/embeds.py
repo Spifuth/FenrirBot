@@ -3,7 +3,7 @@
 import discord
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Union
+from typing import Any
 
 
 class ServiceType(Enum):
@@ -18,7 +18,7 @@ class ServiceType(Enum):
             ServiceType.CONTAINER: "Container",
             ServiceType.STACK: "Stack",
             ServiceType.OTHER: "Service",
-        }.get(self, "Service")
+        }[self]
 
 
 class MaintenanceType(Enum):
@@ -42,7 +42,7 @@ class MaintenanceType(Enum):
             MaintenanceType.SECURITY: "◆",
             MaintenanceType.MIGRATION: "→",
             MaintenanceType.OTHER: "·",
-        }.get(self, "·")
+        }[self]
 
     @property
     def label(self) -> str:
@@ -54,7 +54,7 @@ class MaintenanceType(Enum):
             MaintenanceType.SECURITY: "Sécurité",
             MaintenanceType.MIGRATION: "Migration",
             MaintenanceType.OTHER: "Maintenance",
-        }.get(self, "Maintenance")
+        }[self]
 
     @property
     def verb(self) -> str:
@@ -66,7 +66,7 @@ class MaintenanceType(Enum):
             MaintenanceType.SECURITY: "en cours de patching",
             MaintenanceType.MIGRATION: "en cours de migration",
             MaintenanceType.OTHER: "en maintenance",
-        }.get(self, "en maintenance")
+        }[self]
 
 
 def _bar(value: float, width: int = 10) -> str:
@@ -83,7 +83,7 @@ class DowntimeEmbed:
         service: str,
         reason: str,
         estimated_duration: str,
-        author: Union[discord.User, discord.Member],
+        author: discord.User | discord.Member,
         service_type: ServiceType = ServiceType.OTHER,
     ) -> discord.Embed:
         embed = discord.Embed(
@@ -102,9 +102,9 @@ class DowntimeEmbed:
         service: str,
         reason: str,
         estimated_duration: str,
-        author: Union[discord.User, discord.Member],
+        author: discord.User | discord.Member,
         service_type: ServiceType = ServiceType.OTHER,
-        maintenance_type: Optional["MaintenanceType"] = None,
+        maintenance_type: MaintenanceType | None = None,
     ) -> discord.Embed:
         if maintenance_type is None:
             maintenance_type = MaintenanceType.OTHER
@@ -123,7 +123,7 @@ class DowntimeEmbed:
     @staticmethod
     def end(
         service: str,
-        author: Union[discord.User, discord.Member],
+        author: discord.User | discord.Member,
         service_type: ServiceType = ServiceType.OTHER,
     ) -> discord.Embed:
         embed = discord.Embed(
@@ -142,9 +142,9 @@ class DowntimeEmbed:
         scheduled_time: str,
         duration: str,
         reason: str,
-        author: Union[discord.User, discord.Member],
+        author: discord.User | discord.Member,
         service_type: ServiceType = ServiceType.OTHER,
-        maintenance_type: Optional["MaintenanceType"] = None,
+        maintenance_type: MaintenanceType | None = None,
     ) -> discord.Embed:
         if maintenance_type is None:
             maintenance_type = MaintenanceType.DOWNTIME
@@ -162,7 +162,7 @@ class DowntimeEmbed:
         return embed
 
     @staticmethod
-    def status(message: str, author: Union[discord.User, discord.Member]) -> discord.Embed:
+    def status(message: str, author: discord.User | discord.Member) -> discord.Embed:
         embed = discord.Embed(
             title="Mise à jour de statut",
             description=message,
@@ -177,7 +177,7 @@ class DashboardEmbed:
     """Embed builders for dashboard displays"""
 
     @staticmethod
-    def docker_status(containers: list, running: list, stopped: list) -> discord.Embed:
+    def docker_status(containers: list[Any], running: list[Any], stopped: list[Any]) -> discord.Embed:
         total = len(containers)
         running_pct = (len(running) / total * 100) if total > 0 else 0
 
