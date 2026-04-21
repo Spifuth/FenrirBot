@@ -23,12 +23,9 @@ class DashboardCog(commands.Cog, name="Dashboard"):
 
         if not containers:
             await interaction.followup.send(embed=discord.Embed(
-                title="📊 Dashboard",
-                description=(
-                    "Aucune donnée de monitoring disponible.\n\n"
-                    "• Les containers Docker apparaîtront quand Docker est accessible"
-                ),
-                color=discord.Color.greyple()
+                title="Dashboard",
+                description="Aucune donnée disponible · Docker inaccessible",
+                color=0x2C2F33,
             ))
             return
 

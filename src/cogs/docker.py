@@ -79,24 +79,26 @@ class DockerCog(commands.Cog, name="Docker"):
             return
         
         embed = discord.Embed(
-            title="🐳 Containers Docker",
-            color=discord.Color.blue()
+            title="Containers Docker",
+            color=0x2C2F33,
         )
-        
+
         running = [c for c in containers if c.state == "running"]
         stopped = [c for c in containers if c.state != "running"]
-        
+
         if running:
-            running_list = "\n".join([f"🟢 `{c.display_name}`" for c in running[:15]])
-            embed.add_field(name=f"En cours ({len(running)})", value=running_list, inline=True)
-        
+            running_list = "\n".join([c.display_name for c in running[:15]])
+            embed.add_field(name=f"En cours ({len(running)})", value=f"```\n{running_list}\n```", inline=True)
+
         if stopped:
-            stopped_list = "\n".join([f"⚫ `{c.display_name}`" for c in stopped[:15]])
-            embed.add_field(name=f"Arrêtés ({len(stopped)})", value=stopped_list, inline=True)
-        
+            stopped_list = "\n".join([c.display_name for c in stopped[:15]])
+            embed.add_field(name=f"Arrêtés ({len(stopped)})", value=f"```\n{stopped_list}\n```", inline=True)
+
+        footer = "Fenrir · Docker"
         if docker_manager.cache:
-            embed.set_footer(text=f"Mis à jour: {docker_manager.cache.last_updated}")
-        
+            footer += f" · {docker_manager.cache.last_updated}"
+        embed.set_footer(text=footer)
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="stacks", description="📦 Lister tous les stacks Docker Compose")
@@ -112,11 +114,12 @@ class DockerCog(commands.Cog, name="Docker"):
             return
         
         embed = discord.Embed(
-            title="📦 Stacks Docker Compose",
-            description="\n".join([f"• `{s}`" for s in stacks]),
-            color=discord.Color.blue()
+            title="Stacks Docker Compose",
+            description="```\n" + "\n".join(stacks) + "\n```",
+            color=0x2C2F33,
         )
-        
+        embed.set_footer(text="Fenrir · Docker")
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="refresh", description="🔄 Rafraîchir la liste des containers")

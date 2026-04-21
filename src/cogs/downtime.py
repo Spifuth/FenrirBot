@@ -634,26 +634,29 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             return
         
         embed = discord.Embed(
-            title="📋 Maintenances Planifiées",
-            color=0x3498DB
+            title="Maintenances planifiées",
+            color=0x2C2F33,
         )
-        
+
         for i, m in enumerate(self._scheduled_maintenances, 1):
-            # Get maintenance type info
             try:
                 maint_type = MaintenanceType(m.maintenance_type)
             except ValueError:
                 maint_type = MaintenanceType.DOWNTIME
-            
+
             embed.add_field(
-                name=f"{i}. {maint_type.icon} {m.service}",
-                value=f"🏷️ Type: **{maint_type.label}**\n"
-                      f"⏰ <t:{int(m.scheduled_time.timestamp())}:F>\n"
-                      f"⏱️ Durée: {m.duration}\n"
-                      f"📝 {m.reason}",
-                inline=False
+                name=f"{i}. {m.service}",
+                value=(
+                    f"```\n"
+                    f"Type : {maint_type.label}\n"
+                    f"Durée: {m.duration}\n"
+                    f"```"
+                    f"\nDéclenchement : <t:{int(m.scheduled_time.timestamp())}:F>"
+                    f"\nRaison : {m.reason}"
+                ),
+                inline=False,
             )
-        
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="scheduled-cancel", description="❌ Annuler une maintenance planifiée")
