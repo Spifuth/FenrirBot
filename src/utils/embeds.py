@@ -94,7 +94,7 @@ class DowntimeEmbed:
         )
         embed.add_field(name="Durée estimée", value=f"```\n{estimated_duration}\n```", inline=True)
         embed.add_field(name="Raison", value=f"```\n{reason}\n```", inline=False)
-        embed.set_footer(text=f"Fenrir · Downtime · {author.display_name}")
+        embed.set_footer(text=f"Fenrir · Interruption · {author.display_name}")
         return embed
 
     @staticmethod
