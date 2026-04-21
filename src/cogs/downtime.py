@@ -4,7 +4,7 @@ import discord
 import json
 from discord import app_commands
 from discord.ext import commands, tasks
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
@@ -555,7 +555,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         """Announce scheduled maintenance via slash command with auto-trigger"""
         # Parse the datetime
         try:
-            scheduled_time = datetime.strptime(when, "%Y-%m-%d %H:%M")
+            scheduled_time = datetime.strptime(when, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
         except ValueError:
             await interaction.response.send_message(
                 "❌ Format de date invalide ! Utilisez: `YYYY-MM-DD HH:MM`\n"
@@ -636,6 +636,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         embed = discord.Embed(
             title="Maintenances planifiées",
             color=0x2C2F33,
+            timestamp=datetime.now(timezone.utc),
         )
 
         for i, m in enumerate(self._scheduled_maintenances, 1):
@@ -652,7 +653,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
                     f"Durée: {m.duration}\n"
                     f"```"
                     f"\nDéclenchement : <t:{int(m.scheduled_time.timestamp())}:F>"
-                    f"\nRaison : {m.reason}"
+                    f"\nRaison : {m.reason[:900]}"
                 ),
                 inline=False,
             )

@@ -87,12 +87,16 @@ class DockerCog(commands.Cog, name="Docker"):
         stopped = [c for c in containers if c.state != "running"]
 
         if running:
-            running_list = "\n".join([c.display_name for c in running[:15]])
-            embed.add_field(name=f"En cours ({len(running)})", value=f"```\n{running_list}\n```", inline=True)
+            running_lines = [c.display_name for c in running[:15]]
+            if len(running) > 15:
+                running_lines.append(f"+{len(running) - 15} autres")
+            embed.add_field(name=f"En cours ({len(running)})", value="```\n" + "\n".join(running_lines) + "\n```", inline=True)
 
         if stopped:
-            stopped_list = "\n".join([c.display_name for c in stopped[:15]])
-            embed.add_field(name=f"Arrêtés ({len(stopped)})", value=f"```\n{stopped_list}\n```", inline=True)
+            stopped_lines = [c.display_name for c in stopped[:15]]
+            if len(stopped) > 15:
+                stopped_lines.append(f"+{len(stopped) - 15} autres")
+            embed.add_field(name=f"Arrêtés ({len(stopped)})", value="```\n" + "\n".join(stopped_lines) + "\n```", inline=True)
 
         footer = "Fenrir · Docker"
         if docker_manager.cache:
