@@ -250,49 +250,46 @@ def format_timestamp(dt: datetime, style: str = "relative") -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def create_error_embed(
-    title: str = "❌ Erreur",
+    title: str = "Erreur",
     description: str = "Une erreur est survenue.",
-    error: Optional[Exception] = None
+    error: Exception | None = None,
 ) -> discord.Embed:
     """Create a standardized error embed"""
     embed = discord.Embed(
         title=title,
         description=description,
-        color=0xFF4444,
-        timestamp=datetime.now()
+        color=0x2C2F33,
+        timestamp=datetime.now(timezone.utc),
     )
-    
     if error:
-        error_msg = str(error)[:200]
-        embed.add_field(name="Détails", value=f"```\n{error_msg}\n```", inline=False)
-    
-    embed.set_footer(text="🐺 Fenrir")
+        embed.add_field(name="Détails", value=f"```\n{str(error)[:200]}\n```", inline=False)
+    embed.set_footer(text="Fenrir")
     return embed
 
 
 def create_success_embed(
-    title: str = "✅ Succès",
-    description: str = "Opération réussie."
+    title: str = "Succès",
+    description: str = "Opération réussie.",
 ) -> discord.Embed:
     """Create a standardized success embed"""
     return discord.Embed(
         title=title,
         description=description,
-        color=0x44FF44,
-        timestamp=datetime.now()
+        color=0x2C2F33,
+        timestamp=datetime.now(timezone.utc),
     )
 
 
 def create_info_embed(
     title: str,
-    description: str = ""
+    description: str = "",
 ) -> discord.Embed:
     """Create a standardized info embed"""
     return discord.Embed(
         title=title,
         description=description,
-        color=0x5865F2,
-        timestamp=datetime.now()
+        color=0x2C2F33,
+        timestamp=datetime.now(timezone.utc),
     )
 
 
