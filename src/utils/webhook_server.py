@@ -4,7 +4,7 @@ import asyncio
 import json
 from aiohttp import web
 from datetime import datetime, timezone
-from typing import Optional, Callable, Awaitable
+from typing import Optional
 import discord
 
 
@@ -275,7 +275,7 @@ class WebhookServer:
             summary = annotations.get("summary", "")
             description = annotations.get("description", "")
 
-            state_label = "RESOLVED" if status == "resolved" else severity.upper()
+            state_label = "RESOLVED" if status == "resolved" else severity.upper()  # more informative than "FIRING"
             title = f"[{state_label}] {alert_name}"
 
             bar_lines = []
