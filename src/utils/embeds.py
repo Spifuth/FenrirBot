@@ -3,8 +3,7 @@
 import discord
 from datetime import datetime, timezone
 from enum import Enum
-
-from .docker import ContainerInfo
+from typing import Optional, Union
 
 
 class ServiceType(Enum):
@@ -71,6 +70,7 @@ class MaintenanceType(Enum):
 
 
 def _bar(value: float, width: int = 10) -> str:
+    """Render a fixed-width ASCII progress bar using █ and ·."""
     filled = round(max(0.0, min(value, 100.0)) / 100 * width)
     return "[" + "█" * filled + "·" * (width - filled) + "]"
 
@@ -83,7 +83,7 @@ class DowntimeEmbed:
         service: str,
         reason: str,
         estimated_duration: str,
-        author: discord.User | discord.Member,
+        author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER,
     ) -> discord.Embed:
         embed = discord.Embed(
@@ -94,7 +94,7 @@ class DowntimeEmbed:
         )
         embed.add_field(name="Durée estimée", value=f"```\n{estimated_duration}\n```", inline=True)
         embed.add_field(name="Raison", value=f"```\n{reason}\n```", inline=False)
-        embed.set_footer(text=f"Fenrir · Interruption · {author.display_name}")
+        embed.set_footer(text=f"Fenrir · Downtime · {author.display_name}")
         return embed
 
     @staticmethod
@@ -102,9 +102,9 @@ class DowntimeEmbed:
         service: str,
         reason: str,
         estimated_duration: str,
-        author: discord.User | discord.Member,
+        author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER,
-        maintenance_type: MaintenanceType | None = None,
+        maintenance_type: Optional["MaintenanceType"] = None,
     ) -> discord.Embed:
         if maintenance_type is None:
             maintenance_type = MaintenanceType.OTHER
@@ -123,7 +123,7 @@ class DowntimeEmbed:
     @staticmethod
     def end(
         service: str,
-        author: discord.User | discord.Member,
+        author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER,
     ) -> discord.Embed:
         embed = discord.Embed(
@@ -133,7 +133,7 @@ class DowntimeEmbed:
             timestamp=datetime.now(timezone.utc),
         )
         embed.add_field(name="Statut", value="```\nOPERATIONNEL\n```", inline=True)
-        embed.set_footer(text=f"Fenrir · Rétablissement · {author.display_name}")
+        embed.set_footer(text=f"Fenrir · Downtime · {author.display_name}")
         return embed
 
     @staticmethod
@@ -142,9 +142,9 @@ class DowntimeEmbed:
         scheduled_time: str,
         duration: str,
         reason: str,
-        author: discord.User | discord.Member,
+        author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER,
-        maintenance_type: MaintenanceType | None = None,
+        maintenance_type: Optional["MaintenanceType"] = None,
     ) -> discord.Embed:
         if maintenance_type is None:
             maintenance_type = MaintenanceType.DOWNTIME
@@ -162,7 +162,7 @@ class DowntimeEmbed:
         return embed
 
     @staticmethod
-    def status(message: str, author: discord.User | discord.Member) -> discord.Embed:
+    def status(message: str, author: Union[discord.User, discord.Member]) -> discord.Embed:
         embed = discord.Embed(
             title="Mise à jour de statut",
             description=message,
@@ -177,7 +177,7 @@ class DashboardEmbed:
     """Embed builders for dashboard displays"""
 
     @staticmethod
-    def docker_status(containers: list[ContainerInfo], running: list[ContainerInfo], stopped: list[ContainerInfo]) -> discord.Embed:
+    def docker_status(containers: list, running: list, stopped: list) -> discord.Embed:
         total = len(containers)
         running_pct = (len(running) / total * 100) if total > 0 else 0
 
