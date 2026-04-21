@@ -103,13 +103,13 @@ class DowntimeCog(commands.Cog, name="Downtime"):
     @tasks.loop(seconds=30)
     async def check_scheduled_maintenances(self):
         """Check every 30 seconds if a scheduled maintenance should trigger"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         triggered_any = False
-        
+
         for maintenance in self._scheduled_maintenances[:]:
             if maintenance.announced:
                 continue
-            
+
             if now >= maintenance.scheduled_time:
                 # Check if it's a catchup (more than 5 minutes late)
                 is_catchup = (now - maintenance.scheduled_time).total_seconds() > 300
@@ -135,7 +135,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
     
     async def _catchup_missed_maintenances(self):
         """Trigger any maintenances that were missed while bot was offline"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         missed = [m for m in self._scheduled_maintenances if now >= m.scheduled_time and not m.announced]
         
         if missed:
@@ -200,7 +200,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         
         # Customize message based on catchup status
         if is_catchup:
-            delay_minutes = int((datetime.now() - maintenance.scheduled_time).total_seconds() / 60)
+            delay_minutes = int((datetime.now(timezone.utc) - maintenance.scheduled_time).total_seconds() / 60)
             content = f"{notification_mention} ⚠️ **Maintenance planifiée (retard {delay_minutes}min - bot hors ligne)**"
         else:
             content = f"{notification_mention} ⏰ **Maintenance planifiée démarrant maintenant!**"
@@ -565,7 +565,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             return
         
         # Check if the time is in the future
-        if scheduled_time <= datetime.now():
+        if scheduled_time <= datetime.now(timezone.utc):
             await interaction.response.send_message(
                 "❌ La date doit être dans le futur !",
                 ephemeral=True
