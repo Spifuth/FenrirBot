@@ -1,12 +1,9 @@
 """Discord embed builders for announcements"""
 
 import discord
-import random
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Union
-
-from .personality import FenrirPersonality
 
 
 class ServiceType(Enum):
@@ -14,23 +11,13 @@ class ServiceType(Enum):
     CONTAINER = "container"
     STACK = "stack"
     OTHER = "other"
-    
-    @property
-    def icon(self) -> str:
-        """Get the icon for this service type"""
-        return {
-            ServiceType.CONTAINER: "🐳",
-            ServiceType.STACK: "📚",
-            ServiceType.OTHER: "📦"
-        }.get(self, "📦")
-    
+
     @property
     def label(self) -> str:
-        """Get the label for this service type"""
         return {
             ServiceType.CONTAINER: "Container",
             ServiceType.STACK: "Stack",
-            ServiceType.OTHER: "Service"
+            ServiceType.OTHER: "Service",
         }.get(self, "Service")
 
 
@@ -43,226 +30,73 @@ class MaintenanceType(Enum):
     SECURITY = "security"
     MIGRATION = "migration"
     OTHER = "other"
-    
+
     @property
     def icon(self) -> str:
-        """Get the icon for this maintenance type"""
-        icons = {
-            MaintenanceType.DOWNTIME: "🔧",
-            MaintenanceType.UPDATE: "⬆️",
-            MaintenanceType.BACKUP: "💾",
-            MaintenanceType.CONFIG: "⚙️",
-            MaintenanceType.SECURITY: "🔒",
-            MaintenanceType.MIGRATION: "🚚",
-            MaintenanceType.OTHER: "🛠️"
-        }
-        return icons.get(self, "🛠️")
-    
+        """Kept for backward compatibility with downtime cog scheduled-list."""
+        return {
+            MaintenanceType.DOWNTIME: "▼",
+            MaintenanceType.UPDATE: "↑",
+            MaintenanceType.BACKUP: "◼",
+            MaintenanceType.CONFIG: "≡",
+            MaintenanceType.SECURITY: "◆",
+            MaintenanceType.MIGRATION: "→",
+            MaintenanceType.OTHER: "·",
+        }.get(self, "·")
+
     @property
     def label(self) -> str:
-        """Get the label for this maintenance type"""
-        labels = {
-            MaintenanceType.DOWNTIME: "Downtime",
-            MaintenanceType.UPDATE: "Update",
-            MaintenanceType.BACKUP: "Backup",
-            MaintenanceType.CONFIG: "Config Change",
-            MaintenanceType.SECURITY: "Security Patch",
+        return {
+            MaintenanceType.DOWNTIME: "Interruption",
+            MaintenanceType.UPDATE: "Mise à jour",
+            MaintenanceType.BACKUP: "Sauvegarde",
+            MaintenanceType.CONFIG: "Configuration",
+            MaintenanceType.SECURITY: "Sécurité",
             MaintenanceType.MIGRATION: "Migration",
-            MaintenanceType.OTHER: "Maintenance"
-        }
-        return labels.get(self, "Maintenance")
-    
-    @property
-    def color(self) -> int:
-        """Get the color for this maintenance type"""
-        colors = {
-            MaintenanceType.DOWNTIME: 0xFF4444,   # Red
-            MaintenanceType.UPDATE: 0x3498DB,     # Blue
-            MaintenanceType.BACKUP: 0x9B59B6,     # Purple
-            MaintenanceType.CONFIG: 0xFFAA00,     # Orange
-            MaintenanceType.SECURITY: 0xE74C3C,   # Dark red
-            MaintenanceType.MIGRATION: 0x1ABC9C,  # Teal
-            MaintenanceType.OTHER: 0x95A5A6       # Gray
-        }
-        return colors.get(self, 0x95A5A6)
-    
+            MaintenanceType.OTHER: "Maintenance",
+        }.get(self, "Maintenance")
+
     @property
     def verb(self) -> str:
-        """Get the action verb for this maintenance type"""
-        verbs = {
-            MaintenanceType.DOWNTIME: "going offline",
-            MaintenanceType.UPDATE: "being updated",
-            MaintenanceType.BACKUP: "being backed up",
-            MaintenanceType.CONFIG: "having config changes applied",
-            MaintenanceType.SECURITY: "receiving security patches",
-            MaintenanceType.MIGRATION: "being migrated",
-            MaintenanceType.OTHER: "under maintenance"
-        }
-        return verbs.get(self, "under maintenance")
+        return {
+            MaintenanceType.DOWNTIME: "hors ligne",
+            MaintenanceType.UPDATE: "en cours de mise à jour",
+            MaintenanceType.BACKUP: "en cours de sauvegarde",
+            MaintenanceType.CONFIG: "en reconfiguration",
+            MaintenanceType.SECURITY: "en cours de patching",
+            MaintenanceType.MIGRATION: "en cours de migration",
+            MaintenanceType.OTHER: "en maintenance",
+        }.get(self, "en maintenance")
 
 
-class EmbedAssets:
-    """URLs for embed images and GIFs"""
-    
-    # ═══════════════════════════════════════════════════════════════
-    # GIF Collections - Random selection for variety
-    # ═══════════════════════════════════════════════════════════════
-    
-    # 🔴 DOWNTIME GIFs - Server crashes, errors, chaos vibes
-    DOWNTIME_GIFS = [
-        "https://media.giphy.com/media/ZGBQhaRTHyWtRVn1Xx/giphy.gif",  # Server room fire
-        "https://media.giphy.com/media/HUkOv6BNWc1HO/giphy.gif",        # This is fine (dog in fire)
-        "https://media.giphy.com/media/3o6wrebnKWmvx4ZBio/giphy.gif",   # Glitch effect
-        "https://media.giphy.com/media/l1KVaj5UcbHwrBMqI/giphy.gif",    # Computer smash
-        "https://media.giphy.com/media/xTiTnrliW65rlwud8I/giphy.gif",   # Alert sirens
-        "https://media.giphy.com/media/3oEjI8vagntG7EDxgQ/giphy.gif",   # Matrix glitch
-        "https://media.giphy.com/media/QMHoU66sBXqqLqYvGO/giphy.gif",   # Windows error
-        "https://media.giphy.com/media/j3DxBrKsR7zxB2dKKe/giphy.gif",   # Explosion
-        "https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif",   # Server rack panic
-        "https://media.giphy.com/media/hv5AEBpH3ZyNoRnABG/giphy.gif",   # 404 glitch
-    ]
-    
-    # 🟢 RESTORED GIFs - Success, celebration, back online vibes
-    RESTORED_GIFS = [
-        "https://media.giphy.com/media/3ohzdIuqJoo8QdKlnW/giphy.gif",   # Thumbs up kid
-        "https://media.giphy.com/media/a0h7sAqON67nO/giphy.gif",        # Success kid
-        "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",    # Celebration
-        "https://media.giphy.com/media/xT0GqssRweIhlz209i/giphy.gif",   # Success confetti
-        "https://media.giphy.com/media/XreQmk7ETCak0/giphy.gif",        # Clapping
-        "https://media.giphy.com/media/l0MYC0LajbaPoEADu/giphy.gif",    # We did it!
-        "https://media.giphy.com/media/artj92V8o75VPL7AeQ/giphy.gif",   # Gg ez
-        "https://media.giphy.com/media/fdyZ3qI0GVZC0/giphy.gif",        # Minions cheering
-        "https://media.giphy.com/media/3o6fJ1BM7R2EBRDnxK/giphy.gif",   # Green light
-        "https://media.giphy.com/media/l3V0j3ytFyGHqiV7W/giphy.gif",    # Mission complete
-    ]
-    
-    # 🟡 SCHEDULED GIFs - Maintenance, planning, work in progress
-    SCHEDULED_GIFS = [
-        "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif",    # Clock countdown
-        "https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif",   # Calendar flip
-        "https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif",        # Typing cat
-        "https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif",   # Work in progress
-        "https://media.giphy.com/media/xTiTnxpQ3ghPiB2Hp6/giphy.gif",   # Construction
-        "https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif",   # Gears turning
-        "https://media.giphy.com/media/l4FGuhL4U2WyjdkaY/giphy.gif",    # Wrench tools
-        "https://media.giphy.com/media/SVCSsoKU5v6ZJLk07n/giphy.gif",   # Loading
-        "https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif",   # Hacker coding
-        "https://media.giphy.com/media/Dh5q0sShxgp13DwrvG/giphy.gif",   # Maintenance bot
-    ]
-    
-    # ═══════════════════════════════════════════════════════════════
-    # Thumbnails (top-right icons) - Twemoji for reliability
-    # ═══════════════════════════════════════════════════════════════
-    DOWNTIME_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f6a8.png"   # 🚨
-    RESTORED_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/2705.png"    # ✅
-    SCHEDULED_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f4c5.png"  # 📅
-    STATUS_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/2139.png"      # ℹ️
-    DASHBOARD_THUMB = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f4ca.png"  # 📊
-    FENRIR_ICON = "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f43a.png"      # 🐺
-    
-    @classmethod
-    def random_downtime_gif(cls) -> str:
-        """Get a random downtime GIF"""
-        return random.choice(cls.DOWNTIME_GIFS)
-    
-    @classmethod
-    def random_restored_gif(cls) -> str:
-        """Get a random restored GIF"""
-        return random.choice(cls.RESTORED_GIFS)
-    
-    @classmethod
-    def random_scheduled_gif(cls) -> str:
-        """Get a random scheduled GIF"""
-        return random.choice(cls.SCHEDULED_GIFS)
-
-
-def progress_bar(percentage: float, length: int = 10) -> str:
-    """Create a visual progress bar"""
-    filled = int(percentage / 100 * length)
-    empty = length - filled
-    
-    if percentage >= 99:
-        bar_char = "🟩"
-        empty_char = "⬜"
-    elif percentage >= 90:
-        bar_char = "🟨"
-        empty_char = "⬜"
-    else:
-        bar_char = "🟥"
-        empty_char = "⬜"
-    
-    return bar_char * filled + empty_char * empty
-
-
-def format_duration_fancy(duration: str) -> str:
-    """Format duration with emoji"""
-    if duration.lower() == "unknown":
-        return "⏳ Unknown"
-    return f"⏱️ {duration}"
+def _bar(value: float, width: int = 10) -> str:
+    """Render a fixed-width ASCII progress bar using █ and ·."""
+    filled = round(max(0.0, min(value, 100.0)) / 100 * width)
+    return "[" + "█" * filled + "·" * (width - filled) + "]"
 
 
 class DowntimeEmbed:
     """Helper class to create consistent downtime embeds"""
-    
+
     @staticmethod
     def start(
         service: str,
         reason: str,
         estimated_duration: str,
         author: Union[discord.User, discord.Member],
-        service_type: ServiceType = ServiceType.OTHER
+        service_type: ServiceType = ServiceType.OTHER,
     ) -> discord.Embed:
-        """Create a downtime start announcement embed"""
-        personality = FenrirPersonality()
-        greeting = personality.get_greeting()
-        mood_emoji = personality.get_mood_emoji()
-        quip = personality.get_footer_quip()
-        
         embed = discord.Embed(
-            title=f"{mood_emoji} DOWNTIME ALERT",
-            description=(
-                f"🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴\n"
-                f"*{greeting}*\n\n"
-                f"**{service}** is going offline for maintenance"
-            ),
-            color=0xFF4444,  # Bright red
-            timestamp=datetime.now()
+            title=f"Interruption · {service}",
+            description=f"{service_type.label} hors ligne",
+            color=0x2C2F33,
+            timestamp=datetime.now(timezone.utc),
         )
-        
-        # Main info in a nice format
-        embed.add_field(
-            name=f"{service_type.icon} {service_type.label}",
-            value=f"```\n{service}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="⏱️ Est. Duration",
-            value=f"```\n{estimated_duration}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="\u200b",  # Empty field for spacing
-            value="\u200b",
-            inline=True
-        )
-        embed.add_field(
-            name="📝 Reason",
-            value=f">>> {reason}",
-            inline=False
-        )
-        
-        # Visual elements
-        embed.set_thumbnail(url=EmbedAssets.DOWNTIME_THUMB)
-        embed.set_image(url=EmbedAssets.random_downtime_gif())
-        
-        # Footer with author and mood quip
-        embed.set_footer(
-            text=f"🐺 Fenrir {quip} • Announced by {author.display_name}",
-            icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
-        )
-        
+        embed.add_field(name="Durée estimée", value=f"```\n{estimated_duration}\n```", inline=True)
+        embed.add_field(name="Raison", value=f"```\n{reason}\n```", inline=False)
+        embed.set_footer(text=f"Fenrir · Downtime · {author.display_name}")
         return embed
-    
+
     @staticmethod
     def maintenance(
         service: str,
@@ -270,109 +104,38 @@ class DowntimeEmbed:
         estimated_duration: str,
         author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER,
-        maintenance_type: Optional["MaintenanceType"] = None
+        maintenance_type: Optional["MaintenanceType"] = None,
     ) -> discord.Embed:
-        """Create a maintenance announcement embed for various types (update, backup, config, etc.)"""
-        from .embeds import MaintenanceType  # Import here to avoid circular
-        
         if maintenance_type is None:
             maintenance_type = MaintenanceType.OTHER
-            
-        personality = FenrirPersonality()
-        greeting = personality.get_greeting()
-        mood_emoji = personality.get_mood_emoji()
-        quip = personality.get_footer_quip()
-        
         embed = discord.Embed(
-            title=f"{maintenance_type.icon} {maintenance_type.label.upper()} IN PROGRESS",
-            description=(
-                f"🔵🔵🔵🔵🔵🔵🔵🔵🔵🔵\n"
-                f"*{greeting}*\n\n"
-                f"**{service}** is {maintenance_type.verb}"
-            ),
-            color=maintenance_type.color,
-            timestamp=datetime.now()
+            title=f"{maintenance_type.label} · {service}",
+            description=f"{service_type.label} {maintenance_type.verb}",
+            color=0x2C2F33,
+            timestamp=datetime.now(timezone.utc),
         )
-        
-        # Main info in a nice format
-        embed.add_field(
-            name=f"{service_type.icon} {service_type.label}",
-            value=f"```\n{service}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="⏱️ Est. Duration",
-            value=f"```\n{estimated_duration}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name=f"{maintenance_type.icon} Type",
-            value=f"```\n{maintenance_type.label}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="📝 Details",
-            value=f">>> {reason}",
-            inline=False
-        )
-        
-        # Visual elements
-        embed.set_thumbnail(url=EmbedAssets.SCHEDULED_THUMB)
-        embed.set_image(url=EmbedAssets.random_scheduled_gif())
-        
-        # Footer with author and mood quip
-        embed.set_footer(
-            text=f"🐺 Fenrir {quip} • Announced by {author.display_name}",
-            icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
-        )
-        
+        embed.add_field(name="Type", value=f"```\n{maintenance_type.label}\n```", inline=True)
+        embed.add_field(name="Durée estimée", value=f"```\n{estimated_duration}\n```", inline=True)
+        embed.add_field(name="Détails", value=f"```\n{reason}\n```", inline=False)
+        embed.set_footer(text=f"Fenrir · Maintenance · {author.display_name}")
         return embed
 
     @staticmethod
     def end(
         service: str,
         author: Union[discord.User, discord.Member],
-        service_type: ServiceType = ServiceType.OTHER
+        service_type: ServiceType = ServiceType.OTHER,
     ) -> discord.Embed:
-        """Create a service restored announcement embed"""
-        personality = FenrirPersonality()
-        restored_msg = personality.get_restored_message()
-        mood_emoji = personality.get_mood_emoji()
-        quip = personality.get_footer_quip()
-        
         embed = discord.Embed(
-            title=f"{mood_emoji} SERVICE RESTORED",
-            description=(
-                f"🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢\n"
-                f"*{restored_msg}*\n\n"
-                f"**{service}** is back online and operational! 🎉"
-            ),
-            color=0x44FF44,  # Bright green
-            timestamp=datetime.now()
+            title=f"Service rétabli · {service}",
+            description=f"{service_type.label} opérationnel",
+            color=0x2C2F33,
+            timestamp=datetime.now(timezone.utc),
         )
-        
-        embed.add_field(
-            name=f"{service_type.icon} {service_type.label}",
-            value=f"```\n{service}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="📊 Status",
-            value=f"```diff\n+ OPERATIONAL\n```",
-            inline=True
-        )
-        
-        # Visual elements
-        embed.set_thumbnail(url=EmbedAssets.RESTORED_THUMB)
-        embed.set_image(url=EmbedAssets.random_restored_gif())
-        
-        embed.set_footer(
-            text=f"🐺 Fenrir {quip} • Restored by {author.display_name}",
-            icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
-        )
-        
+        embed.add_field(name="Statut", value="```\nOPERATIONNEL\n```", inline=True)
+        embed.set_footer(text=f"Fenrir · Downtime · {author.display_name}")
         return embed
-    
+
     @staticmethod
     def scheduled(
         service: str,
@@ -381,153 +144,76 @@ class DowntimeEmbed:
         reason: str,
         author: Union[discord.User, discord.Member],
         service_type: ServiceType = ServiceType.OTHER,
-        maintenance_type: Optional["MaintenanceType"] = None
+        maintenance_type: Optional["MaintenanceType"] = None,
     ) -> discord.Embed:
-        """Create a scheduled maintenance announcement embed"""
-        from .embeds import MaintenanceType  # Import here to avoid circular
-        
         if maintenance_type is None:
             maintenance_type = MaintenanceType.DOWNTIME
-            
-        personality = FenrirPersonality()
-        scheduled_msg = personality.get_scheduled_message()
-        mood_emoji = personality.get_mood_emoji()
-        quip = personality.get_footer_quip()
-        
         embed = discord.Embed(
-            title=f"{maintenance_type.icon} SCHEDULED {maintenance_type.label.upper()}",
-            description=(
-                f"🟡🟡🟡🟡🟡🟡🟡🟡🟡🟡\n"
-                f"*{scheduled_msg}*\n\n"
-                f"**{service}** has a scheduled **{maintenance_type.label.lower()}**"
-            ),
-            color=maintenance_type.color,
-            timestamp=datetime.now()
+            title=f"{maintenance_type.label} planifié · {service}",
+            description=f"{service_type.label}",
+            color=0x2C2F33,
+            timestamp=datetime.now(timezone.utc),
         )
-        
-        embed.add_field(
-            name=f"{service_type.icon} {service_type.label}",
-            value=f"```\n{service}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="📅 When",
-            value=f"```\n{scheduled_time}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name=f"{maintenance_type.icon} Type",
-            value=f"```\n{maintenance_type.label}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="⏱️ Duration",
-            value=f"```\n{duration}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="📝 Details",
-            value=f">>> {reason}",
-            inline=False
-        )
-        
-        # Visual elements
-        embed.set_thumbnail(url=EmbedAssets.SCHEDULED_THUMB)
-        embed.set_image(url=EmbedAssets.random_scheduled_gif())
-        
-        embed.set_footer(
-            text=f"🐺 Fenrir {quip} • Scheduled by {author.display_name}",
-            icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
-        )
-        
+        embed.add_field(name="Type", value=f"```\n{maintenance_type.label}\n```", inline=True)
+        embed.add_field(name="Date", value=f"```\n{scheduled_time}\n```", inline=True)
+        embed.add_field(name="Durée", value=f"```\n{duration}\n```", inline=True)
+        embed.add_field(name="Détails", value=f"```\n{reason}\n```", inline=False)
+        embed.set_footer(text=f"Fenrir · Planifié · {author.display_name}")
         return embed
-    
+
     @staticmethod
     def status(message: str, author: Union[discord.User, discord.Member]) -> discord.Embed:
-        """Create a general status update embed"""
         embed = discord.Embed(
-            title="📢 STATUS UPDATE",
-            description=f">>> {message}",
-            color=0x5865F2,  # Discord blurple
-            timestamp=datetime.now()
+            title="Mise à jour de statut",
+            description=message,
+            color=0x2C2F33,
+            timestamp=datetime.now(timezone.utc),
         )
-        
-        embed.set_thumbnail(url=EmbedAssets.STATUS_THUMB)
-        
-        embed.set_footer(
-            text=f"🐺 Fenrir • From {author.display_name}",
-            icon_url=author.avatar.url if author.avatar else EmbedAssets.FENRIR_ICON
-        )
-        
+        embed.set_footer(text=f"Fenrir · Statut · {author.display_name}")
         return embed
 
 
 class DashboardEmbed:
     """Embed builders for dashboard displays"""
-    
+
     @staticmethod
     def docker_status(containers: list, running: list, stopped: list) -> discord.Embed:
-        """Create a Docker containers status embed"""
         total = len(containers)
         running_pct = (len(running) / total * 100) if total > 0 else 0
-        
-        # Choose color based on health
-        if running_pct >= 95:
-            color = 0x44FF44  # Green
-        elif running_pct >= 80:
-            color = 0xFFAA00  # Orange
-        else:
-            color = 0xFF4444  # Red
-        
+
         embed = discord.Embed(
-            title="🐳 DOCKER STATUS",
-            description=(
-                f"```\n"
-                f"╔══════════════════════════════╗\n"
-                f"║  CONTAINER INFRASTRUCTURE    ║\n"
-                f"╚══════════════════════════════╝\n"
-                f"```\n"
-                f"**{len(running)}** / **{total}** containers running\n"
-                f"{progress_bar(running_pct)} `{running_pct:.0f}%`"
-            ),
-            color=color,
-            timestamp=datetime.now()
+            title="Docker",
+            description=f"```\n{_bar(running_pct)}  {len(running)}/{total} en cours\n```",
+            color=0x2C2F33,
+            timestamp=datetime.now(timezone.utc),
         )
-        
-        # Running containers
+
         if running:
-            running_text = ""
+            lines = []
             for c in running[:12]:
-                health = ""
+                suffix = ""
                 if "healthy" in c.status.lower():
-                    health = " `✓`"
+                    suffix = " ok"
                 elif "unhealthy" in c.status.lower():
-                    health = " `✗`"
-                running_text += f"🟢 {c.display_name}{health}\n"
-            
+                    suffix = " err"
+                lines.append(f"{c.display_name}{suffix}")
             if len(running) > 12:
-                running_text += f"*+{len(running) - 12} more...*"
-            
+                lines.append(f"+{len(running) - 12} autres")
             embed.add_field(
-                name=f"▶️ Running ({len(running)})",
-                value=running_text or "None",
-                inline=True
+                name=f"En cours ({len(running)})",
+                value="```\n" + "\n".join(lines) + "\n```",
+                inline=True,
             )
-        
-        # Stopped containers
+
         if stopped:
-            stopped_text = "\n".join([f"⏹️ {c.display_name}" for c in stopped[:8]])
+            lines = [c.display_name for c in stopped[:8]]
             if len(stopped) > 8:
-                stopped_text += f"\n*+{len(stopped) - 8} more...*"
-            
+                lines.append(f"+{len(stopped) - 8} autres")
             embed.add_field(
-                name=f"⏸️ Stopped ({len(stopped)})",
-                value=stopped_text or "None",
-                inline=True
+                name=f"Arrêtés ({len(stopped)})",
+                value="```\n" + "\n".join(lines) + "\n```",
+                inline=True,
             )
-        
-        embed.set_thumbnail(url="https://www.docker.com/wp-content/uploads/2022/03/Moby-logo.png")
-        embed.set_footer(text="🐺 Fenrir Docker Monitor", icon_url=EmbedAssets.FENRIR_ICON)
-        
+
+        embed.set_footer(text="Fenrir · Docker")
         return embed
-    
