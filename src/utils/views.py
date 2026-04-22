@@ -7,7 +7,7 @@ import asyncio
 import re
 from typing import Optional
 
-from .embeds import DowntimeEmbed, ServiceType
+from .embeds import DowntimeEmbed, MaintenanceType, ServiceType
 
 
 def parse_duration(duration_str: str) -> Optional[timedelta]:
@@ -45,6 +45,7 @@ class DowntimeView(ui.View):
         announcement_channel: Optional[discord.abc.Messageable] = None,
         notification_mention: Optional[str] = "@here",
         service_type: ServiceType = ServiceType.OTHER,
+        maintenance_type: MaintenanceType = MaintenanceType.DOWNTIME,
     ):
         super().__init__(timeout=86400)
         self.service = service
@@ -53,6 +54,16 @@ class DowntimeView(ui.View):
         self.announcement_channel = announcement_channel
         self.notification_mention = notification_mention
         self.service_type = service_type
+        self.maintenance_type = maintenance_type
+        self.restore_button.label = {
+            MaintenanceType.DOWNTIME:   "✅ Service restauré",
+            MaintenanceType.UPDATE:     "✅ Mise à jour terminée",
+            MaintenanceType.BACKUP:     "✅ Sauvegarde terminée",
+            MaintenanceType.CONFIG:     "✅ Config appliquée",
+            MaintenanceType.SECURITY:   "✅ Patch appliqué",
+            MaintenanceType.MIGRATION:  "✅ Migration terminée",
+            MaintenanceType.OTHER:      "✅ Maintenance terminée",
+        }[maintenance_type]
         self.resolved = False
         self.message: Optional[discord.Message] = None
         self.timer_task: Optional[asyncio.Task] = None
@@ -117,7 +128,7 @@ class DowntimeView(ui.View):
         assert interaction.message is not None
         await interaction.message.edit(view=self)
 
-        embed = DowntimeEmbed.end(self.service, interaction.user, self.service_type)
+        embed = DowntimeEmbed.end(self.service, interaction.user, self.service_type, self.maintenance_type)
         embed.add_field(name="⏱️ Actual Downtime", value=duration_text, inline=True)
 
         channel = self.announcement_channel or interaction.channel
