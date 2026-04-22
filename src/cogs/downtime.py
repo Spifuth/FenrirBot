@@ -167,25 +167,15 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         except ValueError:
             maint_type = MaintenanceType.DOWNTIME
         
-        # Use appropriate embed based on maintenance type
-        if maint_type == MaintenanceType.DOWNTIME:
-            embed = DowntimeEmbed.start(
-                maintenance.service, 
-                f"[SCHEDULED] {maintenance.reason}", 
-                maintenance.duration, 
-                author, 
-                service_type
-            )
-        else:
-            embed = DowntimeEmbed.maintenance(
-                maintenance.service,
-                f"[SCHEDULED] {maintenance.reason}",
-                maintenance.duration,
-                author,
-                service_type,
-                maint_type
-            )
-        
+        embed = DowntimeEmbed.maintenance(
+            maintenance.service,
+            f"[SCHEDULED] {maintenance.reason}",
+            maintenance.duration,
+            author,
+            service_type,
+            maint_type,
+        )
+
         notification_mention = get_notification_mention()
 
         # Create interactive view with restore button
@@ -196,6 +186,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             announcement_channel=channel,
             notification_mention=notification_mention,
             service_type=service_type,
+            maintenance_type=maint_type,
         )
         
         # Customize message based on catchup status
@@ -315,92 +306,6 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         return choices[:25]
 
     # ========== Slash Commands ==========
-    
-    @app_commands.command(name="downtime", description="🔴 Annoncer l'interruption d'un service")
-    @app_commands.describe(
-        service="Nom du service/container (ex: 'Minecraft Server', 'Plex')",
-        reason="Raison de l'interruption",
-        duration="Durée estimée (ex: '30 minutes', '2 heures')",
-        service_type="Type de service (auto-détecté si non spécifié)",
-        mention="Mentionner le rôle de notification (défaut: Oui)"
-    )
-    @app_commands.choices(service_type=[
-        app_commands.Choice(name="🐳 Container", value="container"),
-        app_commands.Choice(name="📚 Stack", value="stack"),
-        app_commands.Choice(name="📦 Autre service", value="other"),
-    ])
-    @app_commands.autocomplete(service=service_autocomplete)
-    async def downtime_slash(
-        self,
-        interaction: discord.Interaction,
-        service: str,
-        reason: str,
-        duration: str = "Inconnue",
-        service_type: Optional[str] = None,
-        mention: bool = True
-    ):
-        """Announce service downtime via slash command"""
-        channel = get_announcement_channel(self.bot, interaction.channel)
-        
-        # Determine service type
-        if service_type:
-            svc_type = ServiceType(service_type)
-        else:
-            svc_type = self._get_service_type(service)
-        
-        embed = DowntimeEmbed.start(service, reason, duration, interaction.user, svc_type)
-
-        notification_mention = get_notification_mention() if mention else None
-
-        # Create interactive view with restore button
-        view = DowntimeView(
-            service=service,
-            author_id=interaction.user.id,
-            duration_str=duration,
-            announcement_channel=channel,
-            notification_mention=notification_mention,
-            service_type=svc_type,
-        )
-
-        # Send announcement with buttons
-        assert channel is not None
-        msg = await channel.send(
-            content=notification_mention,
-            embed=embed,
-            view=view
-        )
-        view.message = msg
-
-        # Create incident thread for discussion/updates
-        thread = await msg.create_thread(
-            name=f"🔧 {service} - Discussion Incident",
-            auto_archive_duration=1440  # Archive after 24h of inactivity
-        )
-        await thread.send(
-            f"📋 **Fil Incident** pour **{service}**\n\n"
-            f"Utilisez ce fil pour:\n"
-            f"• Poster des mises à jour\n"
-            f"• Partager logs ou messages d'erreur\n"
-            f"• Coordonner avec les autres\n"
-            f"• Documenter le post-mortem\n\n"
-            f"*Le fil sera archivé après 24h d'inactivité*"
-        )
-        view.incident_thread = thread
-        
-        # Start timer if duration was parsed
-        await view.start_timer()
-        
-        # Build response message
-        response_parts = [
-            f"✅ Annonce d'interruption envoyée pour **{service}** ({svc_type.label})",
-            f"💬 Fil d'incident créé: {thread.mention}",
-            f"💡 Cliquez sur le bouton de l'annonce pour marquer comme restauré."
-        ]
-
-        await interaction.response.send_message(
-            "\n".join(response_parts),
-            ephemeral=True
-        )
 
     @app_commands.command(name="up", description="🟢 Annoncer la restauration d'un service")
     @app_commands.describe(
@@ -433,6 +338,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         mention="Mentionner le rôle de notification (défaut: Oui)"
     )
     @app_commands.choices(maintenance_type=[
+        app_commands.Choice(name="🔧 Interruption", value="downtime"),
         app_commands.Choice(name="⬆️ Mise à jour", value="update"),
         app_commands.Choice(name="💾 Sauvegarde", value="backup"),
         app_commands.Choice(name="⚙️ Config", value="config"),
@@ -485,8 +391,9 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             announcement_channel=channel,
             notification_mention=notification_mention,
             service_type=svc_type,
+            maintenance_type=maint_type,
         )
-        
+
         # Send announcement with buttons
         assert channel is not None
         msg = await channel.send(
@@ -680,58 +587,6 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             f"❌ Aucune maintenance planifiée pour **{service}**",
             ephemeral=True
         )
-
-    # ========== Prefix Commands ==========
-    
-    @commands.command(name="down")
-    async def down_prefix(self, ctx: commands.Context, service: str, *, reason: str = "Maintenance"):
-        """Quick downtime announcement: !down "Service Name" Reason here"""
-        channel = get_announcement_channel(self.bot, ctx.channel)
-        service_type = self._get_service_type(service)
-        embed = DowntimeEmbed.start(service, reason, "Inconnue", ctx.author, service_type)
-        
-        notification_mention = get_notification_mention()
-        
-        # Create interactive view with restore button
-        view = DowntimeView(
-            service=service,
-            author_id=ctx.author.id,
-            duration_str="Inconnue",
-            announcement_channel=channel,
-            notification_mention=notification_mention,
-            service_type=service_type
-        )
-        
-        assert channel is not None
-        msg = await channel.send(
-            content=notification_mention,
-            embed=embed,
-            view=view
-        )
-        view.message = msg
-
-        # Create incident thread
-        thread = await msg.create_thread(
-            name=f"🔧 {service} - Discussion Incident",
-            auto_archive_duration=1440
-        )
-        await thread.send(
-            f"📋 **Fil Incident** pour **{service}**\n\n"
-            f"Utilisez ce fil pour poster des mises à jour et coordonner."
-        )
-        view.incident_thread = thread
-
-        await ctx.message.add_reaction("✅")
-
-    @commands.command(name="up")
-    async def up_prefix(self, ctx: commands.Context, *, service: str):
-        """Quick service restored: !up Service Name"""
-        channel = get_announcement_channel(self.bot, ctx.channel)
-        service_type = self._get_service_type(service)
-        embed = DowntimeEmbed.end(service, ctx.author, service_type)
-        assert channel is not None
-        await channel.send(embed=embed)
-        await ctx.message.add_reaction("✅")
 
 
 async def setup(bot: commands.Bot):

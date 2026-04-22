@@ -79,25 +79,6 @@ class DowntimeEmbed:
     """Helper class to create consistent downtime embeds"""
 
     @staticmethod
-    def start(
-        service: str,
-        reason: str,
-        estimated_duration: str,
-        author: discord.User | discord.Member,
-        service_type: ServiceType = ServiceType.OTHER,
-    ) -> discord.Embed:
-        embed = discord.Embed(
-            title=f"Interruption · {service}",
-            description=f"{service_type.label} hors ligne",
-            color=0x2C2F33,
-            timestamp=datetime.now(timezone.utc),
-        )
-        embed.add_field(name="Durée estimée", value=f"```\n{estimated_duration}\n```", inline=True)
-        embed.add_field(name="Raison", value=f"```\n{reason}\n```", inline=False)
-        embed.set_footer(text=f"Fenrir · Downtime · {author.display_name}")
-        return embed
-
-    @staticmethod
     def maintenance(
         service: str,
         reason: str,
