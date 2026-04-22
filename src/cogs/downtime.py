@@ -6,7 +6,6 @@ from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import Optional
 from pathlib import Path
 
 from ..config import config
@@ -160,8 +159,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         author = self.bot.get_user(maintenance.author_id)
         assert author is not None
         service_type = self._get_service_type(maintenance.service)
-        
-        # Get the maintenance type
+
         try:
             maint_type = MaintenanceType(maintenance.maintenance_type)
         except ValueError:
@@ -359,7 +357,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         maintenance_type: str,
         reason: str,
         duration: str = "Inconnue",
-        service_type: Optional[str] = None,
+        service_type: str | None = None,
         mention: bool = True
     ):
         """Announce a maintenance action (update, backup, etc.) via slash command"""
