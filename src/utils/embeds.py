@@ -119,7 +119,7 @@ class DowntimeEmbed:
             timestamp=datetime.now(timezone.utc),
         )
         embed.add_field(name="Statut", value="```\nOPERATIONNEL\n```", inline=True)
-        embed.set_footer(text=f"Fenrir · Downtime · {author.display_name}")
+        embed.set_footer(text=f"Fenrir · Maintenance · {author.display_name}")
         return embed
 
     @staticmethod

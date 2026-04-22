@@ -5,12 +5,11 @@ from discord import ui
 from datetime import datetime, timedelta
 import asyncio
 import re
-from typing import Optional
 
 from .embeds import DowntimeEmbed, MaintenanceType, ServiceType
 
 
-def parse_duration(duration_str: str) -> Optional[timedelta]:
+def parse_duration(duration_str: str) -> timedelta | None:
     """Parse a duration string like '30 minutes', '2 hours', '1h30m' into timedelta"""
     duration_str = duration_str.lower().strip()
 
@@ -35,15 +34,15 @@ def parse_duration(duration_str: str) -> Optional[timedelta]:
 
 
 class DowntimeView(ui.View):
-    """Interactive view for downtime announcements with restore button"""
+    """Interactive view for maintenance announcements with restore and cancel buttons"""
 
     def __init__(
         self,
         service: str,
         author_id: int,
         duration_str: str = "Unknown",
-        announcement_channel: Optional[discord.abc.Messageable] = None,
-        notification_mention: Optional[str] = "@here",
+        announcement_channel: discord.abc.Messageable | None = None,
+        notification_mention: str | None = "@here",
         service_type: ServiceType = ServiceType.OTHER,
         maintenance_type: MaintenanceType = MaintenanceType.DOWNTIME,
     ):
@@ -65,9 +64,9 @@ class DowntimeView(ui.View):
             MaintenanceType.OTHER:      "✅ Maintenance terminée",
         }[maintenance_type]
         self.resolved = False
-        self.message: Optional[discord.Message] = None
-        self.timer_task: Optional[asyncio.Task] = None
-        self.incident_thread: Optional[discord.Thread] = None
+        self.message: discord.Message | None = None
+        self.timer_task: asyncio.Task | None = None
+        self.incident_thread: discord.Thread | None = None
 
         self.duration = parse_duration(duration_str)
         self.start_time = datetime.now()
