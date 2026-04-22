@@ -127,7 +127,7 @@ class DowntimeEmbed:
         service_type: ServiceType = ServiceType.OTHER,
         maintenance_type: MaintenanceType | None = None,
     ) -> discord.Embed:
-        if maintenance_type is None or maintenance_type == MaintenanceType.DOWNTIME:
+        if maintenance_type is None:
             title = f"Service rétabli · {service}"
         else:
             title = f"{maintenance_type.label} terminée · {service}"
