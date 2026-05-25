@@ -116,7 +116,8 @@ def _build_overwrites(
     for ow in overwrites:
         target = ctx.resolver.resolve_target(ow.target)
         if target is None:
-            ctx.err(f"overwrite target not found: {ow.target}")
+            if not ctx.dry_run:
+                ctx.err(f"overwrite target not found: {ow.target}")
             continue
         out[target] = to_permission_overwrite(allow=ow.allow, deny=ow.deny)
     return out
