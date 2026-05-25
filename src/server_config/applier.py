@@ -13,8 +13,8 @@ from dataclasses import dataclass
 import discord
 
 from .differ import diff_roles
-from .models import Spec, RoleSpec
-from .permissions import to_permissions
+from .models import Spec, RoleSpec, CategorySpec, ChannelSpec, OverwriteSpec, ChannelType
+from .permissions import to_permissions, to_permission_overwrite
 from .reports import Summary
 from .resolver import Resolver
 
@@ -106,3 +106,147 @@ async def apply_roles(ctx: ApplyContext) -> None:
             ctx.err(f"role reposition forbidden: {e}")
         except discord.HTTPException as e:
             ctx.err(f"role reposition HTTP: {e}")
+
+
+def _build_overwrites(
+    ctx: ApplyContext, overwrites: list[OverwriteSpec]
+) -> dict[discord.abc.Snowflake, discord.PermissionOverwrite]:
+    out: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {}
+    for ow in overwrites:
+        target = ctx.resolver.resolve_target(ow.target)
+        if target is None:
+            ctx.err(f"overwrite target not found: {ow.target}")
+            continue
+        out[target] = to_permission_overwrite(allow=ow.allow, deny=ow.deny)
+    return out
+
+
+async def apply_categories(ctx: ApplyContext) -> None:
+    for spec in ctx.spec.categories:
+        existing = ctx.resolver.find_existing_category_by_name(spec.name)
+        overwrites = _build_overwrites(ctx, spec.overwrites)
+        if existing is None:
+            ctx.log(f"+ category: {spec.name}")
+            if ctx.dry_run:
+                ctx.summary.categories_created += 1
+                continue
+            try:
+                cat = await ctx.guild.create_category(
+                    name=spec.name,
+                    overwrites=overwrites,
+                    position=spec.position,
+                    reason="server_config apply",
+                )
+                ctx.resolver.register_category(spec.id, cat)
+                ctx.summary.categories_created += 1
+            except discord.Forbidden as e:
+                ctx.err(f"category create forbidden: {spec.name} ({e})")
+            except discord.HTTPException as e:
+                ctx.err(f"category create HTTP: {spec.name} ({e})")
+        else:
+            ctx.resolver.register_category(spec.id, existing)
+            needs_edit = existing.position != spec.position
+            if needs_edit:
+                ctx.log(f"~ category: {spec.name} (position)")
+                if not ctx.dry_run:
+                    try:
+                        await existing.edit(position=spec.position, overwrites=overwrites,
+                                            reason="server_config apply")
+                        ctx.summary.categories_edited += 1
+                    except discord.Forbidden as e:
+                        ctx.err(f"category edit forbidden: {spec.name} ({e})")
+                    except discord.HTTPException as e:
+                        ctx.err(f"category edit HTTP: {spec.name} ({e})")
+                else:
+                    ctx.summary.categories_edited += 1
+            else:
+                # Still reconcile overwrites silently if they drifted
+                if not ctx.dry_run:
+                    try:
+                        await existing.edit(overwrites=overwrites, reason="server_config apply")
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
+                ctx.summary.categories_unchanged += 1
+
+
+async def apply_channels(ctx: ApplyContext) -> None:
+    for cat_spec in ctx.spec.categories:
+        parent = ctx.resolver.categories_by_yaml_id.get(cat_spec.id)
+        for ch_spec in cat_spec.channels:
+            existing = ctx.resolver.find_existing_channel(ch_spec.name, parent)
+            ch_overwrites = _build_overwrites(ctx, ch_spec.overwrites)
+
+            if existing is None:
+                ctx.log(f"+ channel: {cat_spec.name} / {ch_spec.name}")
+                if ctx.dry_run:
+                    ctx.summary.channels_created += 1
+                    continue
+                try:
+                    new = await _create_channel(ctx, parent, ch_spec, ch_overwrites)
+                    if new is not None:
+                        ctx.resolver.register_channel(ch_spec.id, new)
+                        ctx.summary.channels_created += 1
+                except discord.Forbidden as e:
+                    ctx.err(f"channel create forbidden: {ch_spec.name} ({e})")
+                except discord.HTTPException as e:
+                    ctx.err(f"channel create HTTP: {ch_spec.name} ({e})")
+            else:
+                ctx.resolver.register_channel(ch_spec.id, existing)
+                # Reconcile topic/slowmode/user_limit/overwrites
+                kwargs = {}
+                if hasattr(existing, "topic") and ch_spec.topic is not None and existing.topic != ch_spec.topic:
+                    kwargs["topic"] = ch_spec.topic
+                if hasattr(existing, "slowmode_delay") and existing.slowmode_delay != ch_spec.slowmode_delay:
+                    kwargs["slowmode_delay"] = ch_spec.slowmode_delay
+                if isinstance(existing, discord.VoiceChannel) and existing.user_limit != ch_spec.user_limit:
+                    kwargs["user_limit"] = ch_spec.user_limit
+                if ch_overwrites:
+                    kwargs["overwrites"] = ch_overwrites
+
+                if kwargs:
+                    ctx.log(f"~ channel: {cat_spec.name} / {ch_spec.name} ({list(kwargs)})")
+                    if not ctx.dry_run:
+                        try:
+                            await existing.edit(reason="server_config apply", **kwargs)
+                            ctx.summary.channels_edited += 1
+                        except discord.Forbidden as e:
+                            ctx.err(f"channel edit forbidden: {ch_spec.name} ({e})")
+                        except discord.HTTPException as e:
+                            ctx.err(f"channel edit HTTP: {ch_spec.name} ({e})")
+                    else:
+                        ctx.summary.channels_edited += 1
+                else:
+                    ctx.summary.channels_unchanged += 1
+
+
+async def _create_channel(
+    ctx: ApplyContext,
+    parent: discord.CategoryChannel | None,
+    ch_spec: ChannelSpec,
+    overwrites: dict,
+) -> discord.abc.GuildChannel | None:
+    common = dict(name=ch_spec.name, category=parent, overwrites=overwrites, reason="server_config apply")
+    if ch_spec.type == ChannelType.text:
+        return await ctx.guild.create_text_channel(
+            topic=ch_spec.topic or None,
+            slowmode_delay=ch_spec.slowmode_delay,
+            **common,
+        )
+    if ch_spec.type == ChannelType.announcement:
+        return await ctx.guild.create_text_channel(
+            topic=ch_spec.topic or None,
+            news=True,
+            **common,
+        )
+    if ch_spec.type == ChannelType.voice:
+        return await ctx.guild.create_voice_channel(
+            user_limit=ch_spec.user_limit,
+            **common,
+        )
+    if ch_spec.type == ChannelType.forum:
+        return await ctx.guild.create_forum(
+            topic=ch_spec.topic or None,
+            **common,
+        )
+    ctx.err(f"unknown channel type for {ch_spec.name}: {ch_spec.type}")
+    return None
