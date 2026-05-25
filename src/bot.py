@@ -18,11 +18,14 @@ class FenrirBot(commands.Bot):
         "src.cogs.dashboard",
         "src.cogs.reports",
         "src.cogs.alerts",
+        "src.cogs.server_config",
     ]
 
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True
+        intents.reactions = True
 
         super().__init__(
             command_prefix=config.command_prefix if config else "!",
