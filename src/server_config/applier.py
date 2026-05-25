@@ -250,3 +250,55 @@ async def _create_channel(
         )
     ctx.err(f"unknown channel type for {ch_spec.name}: {ch_spec.type}")
     return None
+
+
+async def _find_existing_first_message(
+    bot_user: discord.ClientUser, channel: discord.TextChannel, first_line: str
+) -> discord.Message | None:
+    """Find a bot-authored message whose first line matches `first_line`."""
+    async for msg in channel.history(limit=50, oldest_first=True):
+        if msg.author.id != bot_user.id:
+            continue
+        msg_first = msg.content.splitlines()[0] if msg.content else ""
+        if msg_first.strip() == first_line.strip():
+            return msg
+    return None
+
+
+async def apply_first_messages(ctx: ApplyContext) -> dict[str, discord.Message]:
+    """Returns yaml_channel_id -> first_message Message (created or found)."""
+    out: dict[str, discord.Message] = {}
+    bot_user = ctx.bot.user
+    assert bot_user is not None
+    for cat_spec in ctx.spec.categories:
+        for ch_spec in cat_spec.channels:
+            if not ch_spec.first_message:
+                continue
+            channel = ctx.resolver.channels_by_yaml_id.get(ch_spec.id)
+            if not isinstance(channel, discord.TextChannel):
+                continue
+            first_line = ch_spec.first_message.splitlines()[0]
+
+            if ctx.dry_run:
+                ctx.log(f"+ first_message (dry): {ch_spec.name}")
+                continue
+
+            try:
+                existing = await _find_existing_first_message(bot_user, channel, first_line)
+            except discord.Forbidden:
+                ctx.err(f"history read forbidden in {ch_spec.name}")
+                continue
+
+            if existing is not None:
+                out[ch_spec.id] = existing
+                continue
+
+            ctx.log(f"+ first_message: {ch_spec.name}")
+            try:
+                msg = await channel.send(ch_spec.first_message)
+                out[ch_spec.id] = msg
+            except discord.Forbidden as e:
+                ctx.err(f"first_message send forbidden in {ch_spec.name}: {e}")
+            except discord.HTTPException as e:
+                ctx.err(f"first_message send HTTP in {ch_spec.name}: {e}")
+    return out
