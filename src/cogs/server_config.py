@@ -42,7 +42,7 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
     @app_commands.default_permissions(administrator=True)
     async def validate_cmd(self, interaction: discord.Interaction, path: str = DEFAULT_SPEC):
         spec_path = (REPO_ROOT / path).resolve()
-        if not str(spec_path).startswith(str(REPO_ROOT)):
+        if not spec_path.is_relative_to(REPO_ROOT):
             await interaction.response.send_message("❌ Chemin hors du repo refusé.", ephemeral=True)
             return
         if not spec_path.exists():
@@ -70,7 +70,7 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
     async def diff_cmd(self, interaction: discord.Interaction, path: str = DEFAULT_SPEC):
         await interaction.response.defer(ephemeral=True)
         spec_path = (REPO_ROOT / path).resolve()
-        if not str(spec_path).startswith(str(REPO_ROOT)) or not spec_path.exists():
+        if not spec_path.is_relative_to(REPO_ROOT) or not spec_path.exists():
             await interaction.followup.send(f"❌ Chemin invalide ou introuvable: `{path}`", ephemeral=True)
             return
         try:
@@ -116,7 +116,7 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
     ):
         await interaction.response.defer(ephemeral=True, thinking=True)
         spec_path = (REPO_ROOT / path).resolve()
-        if not str(spec_path).startswith(str(REPO_ROOT)) or not spec_path.exists():
+        if not spec_path.is_relative_to(REPO_ROOT) or not spec_path.exists():
             await interaction.followup.send(f"❌ Chemin invalide ou introuvable: `{path}`", ephemeral=True)
             return
         try:
