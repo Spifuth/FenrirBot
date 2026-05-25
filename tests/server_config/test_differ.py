@@ -1,0 +1,83 @@
+from dataclasses import dataclass, field
+from typing import Any
+
+import pytest
+
+from src.server_config.differ import diff_roles, RoleDiff
+from src.server_config.permissions import to_permissions
+
+
+@dataclass
+class FakeRole:
+    name: str
+    color_value: int = 0
+    hoist: bool = False
+    mentionable: bool = False
+    permissions_value: int = 0
+
+    @property
+    def color(self):
+        return type("C", (), {"value": self.color_value})()
+
+    @property
+    def permissions(self):
+        return type("P", (), {"value": self.permissions_value})()
+
+
+@dataclass
+class FakeGuild:
+    roles: list = field(default_factory=list)
+
+    @property
+    def default_role(self):
+        return type("Everyone", (), {"name": "@everyone"})()
+
+
+def _role_spec(**overrides):
+    from src.server_config.models import RoleSpec
+    base = {"id": "r1", "name": "Verified", "color": "#2ECC71", "hoist": True,
+            "mentionable": False, "permissions": ["VIEW_CHANNEL", "SEND_MESSAGES"]}
+    base.update(overrides)
+    return RoleSpec(**base)
+
+
+def test_diff_roles_create_when_missing():
+    guild = FakeGuild(roles=[])
+    diff = diff_roles(guild, [_role_spec()])
+    assert len(diff.to_create) == 1
+    assert diff.to_create[0].name == "Verified"
+    assert diff.to_edit == []
+    assert diff.unchanged == []
+
+
+def test_diff_roles_unchanged_when_match():
+    spec = _role_spec()
+    existing = FakeRole(
+        name="Verified",
+        color_value=int("2ECC71", 16),
+        hoist=True,
+        mentionable=False,
+        permissions_value=to_permissions(spec.permissions).value,
+    )
+    guild = FakeGuild(roles=[existing])
+    diff = diff_roles(guild, [spec])
+    assert diff.unchanged == [(spec, existing)]
+    assert diff.to_create == []
+    assert diff.to_edit == []
+
+
+def test_diff_roles_edit_when_color_differs():
+    spec = _role_spec()
+    existing = FakeRole(
+        name="Verified",
+        color_value=0x000000,  # wrong color
+        hoist=True,
+        mentionable=False,
+        permissions_value=to_permissions(spec.permissions).value,
+    )
+    guild = FakeGuild(roles=[existing])
+    diff = diff_roles(guild, [spec])
+    assert len(diff.to_edit) == 1
+    edit = diff.to_edit[0]
+    assert edit.role is existing
+    assert "color" in edit.changed_fields
