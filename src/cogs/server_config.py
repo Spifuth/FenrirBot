@@ -10,6 +10,8 @@ from discord.ext import commands
 from pydantic import ValidationError
 
 from ..server_config.loader import load_spec
+from ..server_config.differ import diff_roles, diff_categories, diff_channels
+from ..server_config.reports import summary_from_diffs, render_embed, render_detail_file
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -48,6 +50,44 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
             f"{sum(len(c.channels) for c in spec.categories)} salon(s), "
             f"{len(spec.webhooks)} webhook(s), "
             f"{len(spec.reaction_roles)} bloc(s) reaction-roles.",
+            ephemeral=True,
+        )
+
+    @group.command(name="diff", description="Diff lisible: spec vs serveur actuel")
+    @app_commands.describe(path="Chemin de la spec (défaut: specs/server-spec.yaml)")
+    @app_commands.default_permissions(administrator=True)
+    async def diff_cmd(self, interaction: discord.Interaction, path: str = DEFAULT_SPEC):
+        await interaction.response.defer(ephemeral=True)
+        spec_path = (REPO_ROOT / path).resolve()
+        if not str(spec_path).startswith(str(REPO_ROOT)) or not spec_path.exists():
+            await interaction.followup.send(f"❌ Chemin invalide ou introuvable: `{path}`", ephemeral=True)
+            return
+        try:
+            spec = load_spec(spec_path)
+        except ValidationError as e:
+            await interaction.followup.send(f"❌ Spec invalide:\n```\n{str(e)[:1800]}\n```", ephemeral=True)
+            return
+
+        guild = interaction.guild
+        if guild is None:
+            await interaction.followup.send("❌ Commande à utiliser dans un serveur.", ephemeral=True)
+            return
+
+        rd = diff_roles(guild, spec.roles)
+        cd = diff_categories(guild, spec.categories)
+        chd = diff_channels(guild, spec.categories)
+        summary = summary_from_diffs(rd, cd, chd)
+        for r in rd.to_create:
+            summary.detail_lines.append(f"+ role: {r.name}")
+        for e in rd.to_edit:
+            summary.detail_lines.append(f"~ role: {e.spec.name} ({', '.join(e.changed_fields)})")
+        for c in cd.to_create:
+            summary.detail_lines.append(f"+ category: {c.name}")
+        for cat, ch in chd.to_create:
+            summary.detail_lines.append(f"+ channel: {cat.name} / {ch.name}")
+        await interaction.followup.send(
+            embed=render_embed(summary, dry_run=True),
+            file=render_detail_file(summary),
             ephemeral=True,
         )
 

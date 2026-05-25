@@ -12,7 +12,7 @@ from typing import Any
 
 import discord
 
-from .models import RoleSpec
+from .models import RoleSpec, CategorySpec, ChannelSpec
 from .permissions import to_permissions
 
 
@@ -59,4 +59,50 @@ def diff_roles(guild: Any, specs: list[RoleSpec]) -> RoleDiff:
         else:
             result.unchanged.append((spec, existing))
 
+    return result
+
+
+@dataclass
+class CategoryDiff:
+    to_create: list[CategorySpec] = field(default_factory=list)
+    to_edit: list[CategorySpec] = field(default_factory=list)
+    unchanged: list[CategorySpec] = field(default_factory=list)
+
+
+@dataclass
+class ChannelDiff:
+    to_create: list[tuple[CategorySpec, ChannelSpec]] = field(default_factory=list)
+    to_edit: list[tuple[CategorySpec, ChannelSpec]] = field(default_factory=list)
+    unchanged: list[tuple[CategorySpec, ChannelSpec]] = field(default_factory=list)
+
+
+def diff_categories(guild: Any, specs: list[CategorySpec]) -> CategoryDiff:
+    result = CategoryDiff()
+    by_name = {c.name: c for c in getattr(guild, "categories", [])}
+    for spec in specs:
+        if spec.name not in by_name:
+            result.to_create.append(spec)
+        else:
+            # Position drift is the only thing we can reasonably check; treat as edit if mismatch.
+            existing = by_name[spec.name]
+            if getattr(existing, "position", 0) != spec.position:
+                result.to_edit.append(spec)
+            else:
+                result.unchanged.append(spec)
+    return result
+
+
+def diff_channels(guild: Any, categories: list[CategorySpec]) -> ChannelDiff:
+    result = ChannelDiff()
+    cats_by_name = {c.name: c for c in getattr(guild, "categories", [])}
+    for cat_spec in categories:
+        parent = cats_by_name.get(cat_spec.name)
+        existing_children = list(getattr(parent, "channels", [])) if parent else []
+        existing_by_name = {c.name: c for c in existing_children}
+        for ch_spec in cat_spec.channels:
+            if ch_spec.name not in existing_by_name:
+                result.to_create.append((cat_spec, ch_spec))
+            else:
+                # Conservative: report as unchanged here; the applier will reconcile topic/slowmode.
+                result.unchanged.append((cat_spec, ch_spec))
     return result
