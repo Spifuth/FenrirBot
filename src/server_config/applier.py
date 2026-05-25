@@ -99,10 +99,11 @@ async def apply_roles(ctx: ApplyContext) -> None:
                 positions[role] = i
             if positions:
                 await ctx.guild.edit_role_positions(positions=positions, reason="server_config apply")
-        except discord.Forbidden as e:
-            ctx.err(f"role reposition forbidden: {e}")
-        except discord.HTTPException as e:
-            ctx.err(f"role reposition HTTP: {e}")
+        except (discord.Forbidden, discord.HTTPException) as e:
+            ctx.err(
+                "role reposition skipped: move the bot role to the top of the "
+                f"server hierarchy to enable reordering ({e})"
+            )
 
 
 def _build_overwrites(
@@ -231,6 +232,16 @@ async def _create_channel(
             **common,
         )
     if ch_spec.type == ChannelType.announcement:
+        if "COMMUNITY" not in ctx.guild.features:
+            ctx.err(
+                f"channel {ch_spec.name}: type=announcement requires the guild to "
+                "have COMMUNITY enabled — created as a regular text channel instead"
+            )
+            return await ctx.guild.create_text_channel(
+                topic=ch_spec.topic or None,
+                slowmode_delay=ch_spec.slowmode_delay,
+                **common,
+            )
         return await ctx.guild.create_text_channel(
             topic=ch_spec.topic or None,
             news=True,
@@ -242,6 +253,15 @@ async def _create_channel(
             **common,
         )
     if ch_spec.type == ChannelType.forum:
+        if "COMMUNITY" not in ctx.guild.features:
+            ctx.err(
+                f"channel {ch_spec.name}: type=forum requires the guild to have "
+                "COMMUNITY enabled — created as a regular text channel instead"
+            )
+            return await ctx.guild.create_text_channel(
+                topic=ch_spec.topic or None,
+                **common,
+            )
         return await ctx.guild.create_forum(
             topic=ch_spec.topic or None,
             **common,

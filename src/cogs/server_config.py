@@ -130,12 +130,17 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
             await interaction.followup.send("❌ Commande à utiliser dans un serveur.", ephemeral=True)
             return
 
-        # Bot hierarchy warning: if bot isn't above the highest non-default role,
-        # role create/edit of roles ranked above it will fail with Forbidden.
-        # We don't abort — applier handles Forbidden per-role and reports as errors.
+        # Bot hierarchy warning: if bot isn't above the highest non-default,
+        # non-bot-owned role, role create/edit/reposition of roles ranked above
+        # it will fail with Forbidden. Applier handles Forbidden per-role.
         me = guild.me
         if me is not None:
-            highest_other = max((r.position for r in guild.roles if not r.is_default()), default=0)
+            my_role_ids = {r.id for r in me.roles}
+            highest_other = max(
+                (r.position for r in guild.roles
+                 if not r.is_default() and r.id not in my_role_ids),
+                default=0,
+            )
             if me.top_role.position <= highest_other:
                 await interaction.followup.send(
                     "⚠️ Le rôle du bot n'est pas au sommet de la hiérarchie. "
