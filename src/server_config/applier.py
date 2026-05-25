@@ -88,11 +88,15 @@ async def apply_roles(ctx: ApplyContext) -> None:
         ctx.resolver.register_role(spec.id, role)
         ctx.summary.roles_unchanged += 1
 
-    # Reposition: spec order is bottom→top. Skip in dry_run.
-    if not ctx.dry_run and (rd.to_create or rd.to_edit):
+    # Reposition: spec order is top→bottom (first listed = highest in hierarchy).
+    # Discord positions are bottom-up (position 1 = right above @everyone), so
+    # we iterate the spec list in reverse to assign positions 1, 2, 3, ... to
+    # the last-listed (lowest) role first. Always runs (idempotent at Discord
+    # side: positions that already match are noops). Skipped in dry_run.
+    if not ctx.dry_run:
         try:
             positions: dict[discord.Role, int] = {}
-            for i, spec in enumerate(ctx.spec.roles, start=1):
+            for i, spec in enumerate(reversed(ctx.spec.roles), start=1):
                 role = ctx.resolver.roles_by_yaml_id.get(spec.id)
                 if role is None or role.managed or role.is_default():
                     continue
