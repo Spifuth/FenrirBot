@@ -17,7 +17,7 @@ from .models import Spec, RoleSpec, CategorySpec, ChannelSpec, OverwriteSpec, Ch
 from .permissions import to_permissions, to_permission_overwrite
 from .reports import Summary
 from .resolver import Resolver
-from .state import State, ReactionMessageEntry, ReactionBindingEntry
+from .state import State, ReactionMessageEntry, ReactionBindingEntry, WebhookEntry
 
 log = logging.getLogger("server_config.applier")
 
@@ -341,3 +341,81 @@ async def apply_reaction_roles(
                 role_id=role.id, mode=binding.mode.value
             )
             ctx.summary.reactions_added += 1
+
+
+def _mask_webhook_url(url: str) -> str:
+    """https://discord.com/api/webhooks/{id}/{token} -> .../{id}/****"""
+    if "/webhooks/" not in url:
+        return "****"
+    head, _, token_part = url.rpartition("/")
+    return f"{head}/****"
+
+
+async def apply_webhooks(
+    ctx: ApplyContext,
+    state: State,
+    invoker: discord.User | discord.Member,
+) -> list[tuple[str, str]]:
+    """Returns list of (yaml_id, url) for *newly created* webhooks only."""
+    created: list[tuple[str, str]] = []
+    for wh_spec in ctx.spec.webhooks:
+        channel = ctx.resolver.channels_by_yaml_id.get(wh_spec.channel)
+        if not isinstance(channel, discord.TextChannel):
+            ctx.err(f"webhook {wh_spec.id}: target channel {wh_spec.channel} not a text channel")
+            continue
+
+        if ctx.dry_run:
+            ctx.log(f"+ webhook (dry): {wh_spec.name} in #{channel.name}")
+            ctx.summary.webhooks_created += 1
+            continue
+
+        try:
+            existing = await channel.webhooks()
+        except discord.Forbidden as e:
+            ctx.err(f"webhook list forbidden in {channel.name}: {e}")
+            continue
+
+        match = next((w for w in existing if w.name == wh_spec.name), None)
+        if match is not None:
+            state.webhooks[wh_spec.id] = WebhookEntry(
+                discord_webhook_id=match.id, channel_id=channel.id, name=match.name
+            )
+            ctx.summary.webhooks_unchanged += 1
+            ctx.log(f"= webhook: {wh_spec.name} (existing, id={match.id})")
+            continue
+
+        try:
+            new = await channel.create_webhook(
+                name=wh_spec.name, reason="server_config apply"
+            )
+        except discord.Forbidden as e:
+            ctx.err(f"webhook create forbidden in {channel.name}: {e}")
+            continue
+        except discord.HTTPException as e:
+            ctx.err(f"webhook create HTTP in {channel.name}: {e}")
+            continue
+
+        state.webhooks[wh_spec.id] = WebhookEntry(
+            discord_webhook_id=new.id, channel_id=channel.id, name=new.name
+        )
+        ctx.summary.webhooks_created += 1
+        # Logging: masked only
+        ctx.log(f"+ webhook: {wh_spec.name} (id={new.id}, url=<DM only>)")
+        created.append((wh_spec.id, new.url))
+
+    # DM the invoker once, with all new webhook URLs
+    if created:
+        try:
+            dm = await invoker.create_dm()
+            lines = ["**Nouveaux webhooks créés (URLs = SECRETS)**", ""]
+            for yid, url in created:
+                lines.append(f"• `{yid}` — {url}")
+            lines += [
+                "",
+                "Stocke ces URLs dans Infisical (path: `homelab/discord-bot/webhooks/...`).",
+                "Tu peux les re-récupérer plus tard via `/server-config webhooks reveal id:<yaml_id>`.",
+            ]
+            await dm.send("\n".join(lines))
+        except discord.Forbidden:
+            ctx.err("DM failed (DMs closed?) — URLs disponibles via /server-config webhooks reveal")
+    return created
