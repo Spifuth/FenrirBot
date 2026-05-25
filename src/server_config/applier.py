@@ -17,6 +17,7 @@ from .models import Spec, RoleSpec, CategorySpec, ChannelSpec, OverwriteSpec, Ch
 from .permissions import to_permissions, to_permission_overwrite
 from .reports import Summary
 from .resolver import Resolver
+from .state import State, ReactionMessageEntry, ReactionBindingEntry
 
 log = logging.getLogger("server_config.applier")
 
@@ -302,3 +303,41 @@ async def apply_first_messages(ctx: ApplyContext) -> dict[str, discord.Message]:
             except discord.HTTPException as e:
                 ctx.err(f"first_message send HTTP in {ch_spec.name}: {e}")
     return out
+
+
+async def apply_reaction_roles(
+    ctx: ApplyContext,
+    first_messages: dict[str, discord.Message],
+    state: State,
+) -> None:
+    for block in ctx.spec.reaction_roles:
+        # We only support message_marker == "first_message" for now.
+        msg = first_messages.get(block.channel)
+        if msg is None and not ctx.dry_run:
+            ctx.err(f"reaction_roles: no first_message for channel {block.channel}")
+            continue
+
+        for binding in block.bindings:
+            role = ctx.resolver.roles_by_yaml_id.get(binding.role)
+            if role is None and not ctx.dry_run:
+                ctx.err(f"reaction binding: role {binding.role} unresolved")
+                continue
+            ctx.log(f"+ reaction: {binding.emoji} -> {binding.role} ({binding.mode.value})")
+            if ctx.dry_run:
+                ctx.summary.reactions_added += 1
+                continue
+            assert msg is not None and role is not None
+            # Add the reaction if not already present
+            try:
+                await msg.add_reaction(binding.emoji)
+            except discord.HTTPException as e:
+                ctx.err(f"add_reaction failed for {binding.emoji}: {e}")
+                continue
+
+            entry = state.reaction_messages.setdefault(
+                msg.id, ReactionMessageEntry(channel_id=msg.channel.id, bindings={})
+            )
+            entry.bindings[binding.emoji] = ReactionBindingEntry(
+                role_id=role.id, mode=binding.mode.value
+            )
+            ctx.summary.reactions_added += 1
