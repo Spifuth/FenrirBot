@@ -32,6 +32,10 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
 
     group = app_commands.Group(name="server-config", description="Reconciliation déclarative du serveur")
 
+    webhooks_group = app_commands.Group(
+        parent=group, name="webhooks", description="Outils webhooks"
+    )
+
     @group.command(name="validate", description="Valider une spec YAML sans rien modifier")
     @app_commands.describe(path="Chemin de la spec (défaut: specs/server-spec.yaml)")
     @app_commands.default_permissions(administrator=True)
@@ -201,6 +205,42 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
                 # add_only: do nothing on removal
         except discord.Forbidden:
             return
+
+    @webhooks_group.command(name="reveal", description="Re-DM l'URL d'un webhook existant (par id YAML)")
+    @app_commands.describe(id="Identifiant YAML du webhook (ex: wh_questions_live)")
+    @app_commands.default_permissions(administrator=True)
+    async def webhooks_reveal(self, interaction: discord.Interaction, id: str):
+        await interaction.response.defer(ephemeral=True)
+        state = load_state()
+        entry = state.webhooks.get(id)
+        if entry is None:
+            await interaction.followup.send(f"❌ Aucun webhook connu pour id `{id}`.", ephemeral=True)
+            return
+        guild = interaction.guild
+        if guild is None:
+            await interaction.followup.send("❌ Commande à utiliser dans un serveur.", ephemeral=True)
+            return
+        channel = guild.get_channel(entry.channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.followup.send(f"❌ Salon introuvable (id={entry.channel_id}).", ephemeral=True)
+            return
+        try:
+            webhooks = await channel.webhooks()
+        except discord.Forbidden:
+            await interaction.followup.send("❌ Manque la permission `Manage Webhooks`.", ephemeral=True)
+            return
+        wh = next((w for w in webhooks if w.id == entry.discord_webhook_id), None)
+        if wh is None:
+            await interaction.followup.send("❌ Webhook supprimé côté Discord. Re-run /apply.", ephemeral=True)
+            return
+        try:
+            dm = await interaction.user.create_dm()
+            await dm.send(f"🔐 Webhook `{id}`\n{wh.url}")
+            await interaction.followup.send("📬 URL envoyée en DM.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ DM impossible (DMs fermés). Ouvre tes DMs et réessaie.", ephemeral=True
+            )
 
 
 async def setup(bot: commands.Bot):
