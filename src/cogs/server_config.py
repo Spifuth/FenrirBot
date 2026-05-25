@@ -10,6 +10,7 @@ from discord.ext import commands
 from pydantic import ValidationError
 
 from ..server_config.loader import load_spec
+from ..server_config.exporter import export_guild
 from ..server_config.differ import diff_roles, diff_categories, diff_channels
 from ..server_config.reports import summary_from_diffs, render_embed, render_detail_file, Summary
 from ..server_config.applier import (
@@ -205,6 +206,24 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
                 # add_only: do nothing on removal
         except discord.Forbidden:
             return
+
+    @group.command(name="export", description="Exporter l'état actuel du serveur en YAML")
+    @app_commands.describe(output="Nom du fichier à attacher (défaut: server-spec-export.yaml)")
+    @app_commands.default_permissions(administrator=True)
+    async def export_cmd(
+        self,
+        interaction: discord.Interaction,
+        output: str = "server-spec-export.yaml",
+    ):
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            await interaction.followup.send("❌ Commande à utiliser dans un serveur.", ephemeral=True)
+            return
+        yaml_str = export_guild(guild)
+        import io
+        f = discord.File(io.BytesIO(yaml_str.encode("utf-8")), filename=output)
+        await interaction.followup.send("📤 Export prêt.", file=f, ephemeral=True)
 
     @webhooks_group.command(name="reveal", description="Re-DM l'URL d'un webhook existant (par id YAML)")
     @app_commands.describe(id="Identifiant YAML du webhook (ex: wh_questions_live)")
