@@ -163,6 +163,45 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
             ephemeral=True,
         )
 
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        await self._handle_reaction(payload, added=True)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
+        await self._handle_reaction(payload, added=False)
+
+    async def _handle_reaction(self, payload: discord.RawReactionActionEvent, added: bool):
+        if payload.user_id == (self.bot.user.id if self.bot.user else 0):
+            return
+        state = load_state()
+        msg_entry = state.reaction_messages.get(payload.message_id)
+        if not msg_entry:
+            return
+        emoji_key = str(payload.emoji)
+        binding = msg_entry.bindings.get(emoji_key)
+        if not binding:
+            return
+
+        guild = self.bot.get_guild(payload.guild_id) if payload.guild_id else None
+        if guild is None:
+            return
+        member = guild.get_member(payload.user_id) or await guild.fetch_member(payload.user_id)
+        role = guild.get_role(binding.role_id)
+        if member is None or role is None:
+            return
+
+        try:
+            if added:
+                if role not in member.roles:
+                    await member.add_roles(role, reason="server_config reaction-role")
+            else:
+                if binding.mode == "toggle" and role in member.roles:
+                    await member.remove_roles(role, reason="server_config reaction-role toggle off")
+                # add_only: do nothing on removal
+        except discord.Forbidden:
+            return
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ServerConfigCog(bot))
