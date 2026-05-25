@@ -6,8 +6,6 @@ a `[DRY]`-prefixed line to the report.
 
 from __future__ import annotations
 
-import asyncio
-import logging
 from dataclasses import dataclass
 
 import discord
@@ -18,8 +16,6 @@ from .permissions import to_permissions, to_permission_overwrite
 from .reports import Summary
 from .resolver import Resolver
 from .state import State, ReactionMessageEntry, ReactionBindingEntry, WebhookEntry
-
-log = logging.getLogger("server_config.applier")
 
 
 @dataclass
@@ -271,7 +267,9 @@ async def apply_first_messages(ctx: ApplyContext) -> dict[str, discord.Message]:
     """Returns yaml_channel_id -> first_message Message (created or found)."""
     out: dict[str, discord.Message] = {}
     bot_user = ctx.bot.user
-    assert bot_user is not None
+    if bot_user is None:
+        ctx.err("bot.user is None — bot may be reconnecting")
+        return {}
     for cat_spec in ctx.spec.categories:
         for ch_spec in cat_spec.channels:
             if not ch_spec.first_message:
@@ -401,7 +399,7 @@ async def apply_webhooks(
         )
         ctx.summary.webhooks_created += 1
         # Logging: masked only
-        ctx.log(f"+ webhook: {wh_spec.name} (id={new.id}, url=<DM only>)")
+        ctx.log(f"+ webhook: {wh_spec.name} (id={new.id}, url={_mask_webhook_url(new.url)})")
         created.append((wh_spec.id, new.url))
 
     # DM the invoker once, with all new webhook URLs
