@@ -11,7 +11,13 @@ from pydantic import ValidationError
 
 from ..server_config.loader import load_spec
 from ..server_config.differ import diff_roles, diff_categories, diff_channels
-from ..server_config.reports import summary_from_diffs, render_embed, render_detail_file
+from ..server_config.reports import summary_from_diffs, render_embed, render_detail_file, Summary
+from ..server_config.applier import (
+    ApplyContext, apply_roles, apply_categories, apply_channels,
+    apply_first_messages, apply_reaction_roles, apply_webhooks,
+)
+from ..server_config.resolver import Resolver
+from ..server_config.state import load_state, save_state
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -87,6 +93,72 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
             summary.detail_lines.append(f"+ channel: {cat.name} / {ch.name}")
         await interaction.followup.send(
             embed=render_embed(summary, dry_run=True),
+            file=render_detail_file(summary),
+            ephemeral=True,
+        )
+
+    @group.command(name="apply", description="Appliquer la spec au serveur")
+    @app_commands.describe(
+        path="Chemin de la spec (défaut: specs/server-spec.yaml)",
+        dry_run="Si True, log uniquement sans rien modifier (défaut: True)",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def apply_cmd(
+        self,
+        interaction: discord.Interaction,
+        path: str = DEFAULT_SPEC,
+        dry_run: bool = True,
+    ):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        spec_path = (REPO_ROOT / path).resolve()
+        if not str(spec_path).startswith(str(REPO_ROOT)) or not spec_path.exists():
+            await interaction.followup.send(f"❌ Chemin invalide ou introuvable: `{path}`", ephemeral=True)
+            return
+        try:
+            spec = load_spec(spec_path)
+        except ValidationError as e:
+            await interaction.followup.send(f"❌ Spec invalide:\n```\n{str(e)[:1800]}\n```", ephemeral=True)
+            return
+
+        guild = interaction.guild
+        if guild is None:
+            await interaction.followup.send("❌ Commande à utiliser dans un serveur.", ephemeral=True)
+            return
+
+        # Bot hierarchy warning: if bot isn't above the highest non-default role,
+        # role create/edit of roles ranked above it will fail with Forbidden.
+        # We don't abort — applier handles Forbidden per-role and reports as errors.
+        me = guild.me
+        if me is not None:
+            highest_other = max((r.position for r in guild.roles if not r.is_default()), default=0)
+            if me.top_role.position <= highest_other:
+                await interaction.followup.send(
+                    "⚠️ Le rôle du bot n'est pas au sommet de la hiérarchie. "
+                    "Certaines opérations sur les rôles haut-classés peuvent échouer. "
+                    "Best-effort en cours…",
+                    ephemeral=True,
+                )
+
+        state = load_state()
+        resolver = Resolver(guild=guild, spec=spec)
+        summary = Summary()
+        ctx = ApplyContext(
+            bot=self.bot, guild=guild, spec=spec,
+            resolver=resolver, summary=summary, dry_run=dry_run,
+        )
+
+        await apply_roles(ctx)
+        await apply_categories(ctx)
+        await apply_channels(ctx)
+        first_msgs = await apply_first_messages(ctx)
+        await apply_reaction_roles(ctx, first_messages=first_msgs, state=state)
+        await apply_webhooks(ctx, state=state, invoker=interaction.user)
+
+        if not dry_run:
+            save_state(state)
+
+        await interaction.followup.send(
+            embed=render_embed(summary, dry_run=dry_run),
             file=render_detail_file(summary),
             ephemeral=True,
         )
