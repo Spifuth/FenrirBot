@@ -1,0 +1,600 @@
+# =============================================================================
+# Spec serveur Discord — Communauté post-intervention lycée STI2D SIN
+# =============================================================================
+# Format déclaratif consommé par la commande `apply-server-config` du bot.
+# Source de vérité du serveur — diffable, versionnable.
+#
+# Ordre d'application requis (côté bot) :
+#   1. Server settings (verification level, etc.)
+#   2. Roles (du plus bas au plus haut en position)
+#   3. Categories (avec overwrites)
+#   4. Channels (avec overwrites)
+#   5. Re-positionnement des roles si nécessaire
+# =============================================================================
+
+meta:
+  spec_version: "1.0"
+  description: >
+    Serveur communautaire pour prolonger l'intervention lycée :
+    discussions cyber/IA/dev, orientation post-bac, ressources, CTF.
+  target_audience: "Lycéens STI2D SIN (~16-18 ans) ayant participé à l'intervention"
+  language: fr
+
+# -----------------------------------------------------------------------------
+# Paramètres globaux du serveur
+# -----------------------------------------------------------------------------
+server:
+  # À CHANGER : nom du serveur que tu veux afficher
+  name: "STI2D-SIN — Découverte Tech"   # TODO toi
+
+  # Niveau de vérification : limite les nouveaux comptes qui peuvent rejoindre
+  # Options : NONE, LOW (email vérifié), MEDIUM (email + 5min sur Discord),
+  #          HIGH (+ phone vérifié), VERY_HIGH (10 min sur le serveur)
+  # Reco pour public mineur : HIGH (phone vérifié = filtre les bots/raids)
+  verification_level: HIGH
+
+  # Filtrage automatique des médias par Discord (NSFW)
+  # Reco mineurs : ALL_MEMBERS
+  explicit_content_filter: ALL_MEMBERS
+
+  # Notifications par défaut : ONLY_MENTIONS (sinon overdose)
+  default_notifications: ONLY_MENTIONS
+
+  # Active les fonctionnalités Community (welcome screen, règles natives)
+  # Note : nécessite que le serveur respecte certains critères Discord
+  community_enabled: true
+
+# -----------------------------------------------------------------------------
+# Rôles — ordonnés du plus bas au plus haut (le bot crée dans cet ordre,
+#         le dernier listé sera le plus haut en hiérarchie)
+# -----------------------------------------------------------------------------
+# IMPORTANT : le bot ne peut PAS créer un rôle au-dessus de sa propre position.
+# Le rôle "Bot" (managed) doit déjà être tout en haut AVANT exécution.
+# Une fois la création terminée, repositionne manuellement "Administrateur"
+# au-dessus de "Bot" (Discord interdit au bot de se faire dépasser).
+# -----------------------------------------------------------------------------
+
+roles:
+
+  # --- Rôles d'intérêt (auto-attribués via réaction sur #choix-intérêts) ---
+  # Servent à pinger sélectivement (ex: @Cyber-curieux pour une annonce CTF).
+  # Aucune permission spéciale, juste de l'identité.
+
+  - id: interet_dev
+    name: "💻 Curieux dev"
+    color: "#3498DB"     # bleu
+    hoist: false
+    mentionable: true
+    permissions: []
+
+  - id: interet_ia
+    name: "🤖 Curieux IA"
+    color: "#9B59B6"     # violet
+    hoist: false
+    mentionable: true
+    permissions: []
+
+  - id: interet_cyber
+    name: "🔐 Curieux cyber"
+    color: "#E74C3C"     # rouge tech
+    hoist: false
+    mentionable: true
+    permissions: []
+
+  - id: interet_bidouilleur
+    name: "🛠️ Bidouilleur confirmé"
+    color: "#F39C12"     # orange
+    hoist: false
+    mentionable: true
+    permissions: []
+    note: "Auto-attribué via réaction, déclaratif. Pas de filtre."
+
+  # --- Rôle membre vérifié (acceptation des règles via réaction) ---
+  - id: lyceen_verifie
+    name: "🎓 Lycéen vérifié"
+    color: "#2ECC71"     # vert
+    hoist: true          # affiché dans la liste comme groupe
+    mentionable: false   # pas de @Lycéen-vérifié, trop de bruit
+    permissions:
+      - VIEW_CHANNEL
+      - READ_MESSAGE_HISTORY
+      - SEND_MESSAGES
+      - EMBED_LINKS
+      - ATTACH_FILES
+      - ADD_REACTIONS
+      - USE_EXTERNAL_EMOJIS
+      - CONNECT
+      - SPEAK
+      - STREAM
+      - USE_APPLICATION_COMMANDS
+
+  # --- Rôle staff lycée (profs accompagnants — optionnel) ---
+  - id: staff_lycee
+    name: "🏫 Staff lycée"
+    color: "#1ABC9C"     # turquoise
+    hoist: true
+    mentionable: true
+    permissions:
+      - VIEW_CHANNEL
+      - READ_MESSAGE_HISTORY
+      - SEND_MESSAGES
+      - EMBED_LINKS
+      - ATTACH_FILES
+      - ADD_REACTIONS
+      - CONNECT
+      - SPEAK
+    note: "Lecture partout sauf #staff-* ; pas de modération."
+
+  # --- Intervenants externes (pro qui viennent parler de leur métier) ---
+  - id: intervenant
+    name: "🎤 Intervenant"
+    color: "#F1C40F"     # jaune doré
+    hoist: true
+    mentionable: true
+    permissions:
+      - VIEW_CHANNEL
+      - READ_MESSAGE_HISTORY
+      - SEND_MESSAGES
+      - EMBED_LINKS
+      - ATTACH_FILES
+      - ADD_REACTIONS
+      - MENTION_EVERYONE   # pour pouvoir mentionner @Lycéen-vérifié dans son AMA
+      - CONNECT
+      - SPEAK
+      - STREAM
+      - USE_APPLICATION_COMMANDS
+
+  # --- Modérateurs ---
+  - id: moderateur
+    name: "🛡️ Modérateur"
+    color: "#E67E22"     # orange foncé
+    hoist: true
+    mentionable: true
+    permissions:
+      - VIEW_CHANNEL
+      - READ_MESSAGE_HISTORY
+      - SEND_MESSAGES
+      - MANAGE_MESSAGES        # pin, delete
+      - MANAGE_THREADS
+      - KICK_MEMBERS
+      - MODERATE_MEMBERS       # timeout
+      - MUTE_MEMBERS
+      - DEAFEN_MEMBERS
+      - MOVE_MEMBERS
+      - VIEW_AUDIT_LOG
+      - MENTION_EVERYONE
+      - ATTACH_FILES
+      - EMBED_LINKS
+      - ADD_REACTIONS
+
+  # --- Administrateur (toi) ---
+  - id: administrateur
+    name: "👑 Administrateur"
+    color: "#992D22"     # rouge sombre
+    hoist: true
+    mentionable: false
+    permissions:
+      - ADMINISTRATOR
+
+# -----------------------------------------------------------------------------
+# Catégories & salons
+# -----------------------------------------------------------------------------
+# Permissions héritées de la catégorie sauf override explicite sur le salon.
+# Convention : @everyone = par défaut pas d'accès,
+# on whiteliste explicitement les rôles qui peuvent voir.
+# -----------------------------------------------------------------------------
+
+categories:
+
+  # === 0. ACCUEIL — visible par tous, écriture restreinte ====================
+  - id: cat_accueil
+    name: "🏠 Accueil"
+    position: 0
+    overwrites:
+      - target: "@everyone"
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY]
+        deny:  [SEND_MESSAGES, ADD_REACTIONS, CREATE_PUBLIC_THREADS]
+    channels:
+
+      - id: ch_regles
+        name: "📜-règles"
+        type: text
+        topic: "Les règles du serveur. Lis-les en entier avant de réagir 👇"
+        overwrites:
+          - target: "@everyone"
+            deny: [SEND_MESSAGES, ADD_REACTIONS]
+            allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY]
+          - target: administrateur
+            allow: [SEND_MESSAGES, MANAGE_MESSAGES, ADD_REACTIONS]
+        first_message: |
+          # 📜 Règles du serveur
+
+          Bienvenue ! Ce serveur est un espace de découverte autour de
+          l'informatique, la cybersécurité, l'IA et les parcours d'études.
+
+          **Pour rejoindre les discussions, réagis avec ✅ ci-dessous
+          après avoir lu les règles.**
+
+          ## Les règles
+
+          1. **Respect.** Pas d'insultes, pas de discriminations,
+             pas de harcèlement. Personne n'est ridicule de poser
+             une question.
+          2. **Sécurité.** Pas de partage de données perso (les tiennes
+             ou celles des autres). Pas de doxxing.
+          3. **Légalité.** Pas d'incitation à des actes illégaux —
+             le hack se fait sur ses propres machines ou sur des
+             plateformes faites pour (CTF, HTB, Root-Me, etc.).
+          4. **Pas de NSFW.** Ce serveur accueille des mineurs.
+          5. **Pas de pub/spam.** Pas de liens d'invitation Discord,
+             pas de promo de services.
+          6. **DMs entre membres :** déconseillés. Si un membre
+             te met mal à l'aise en MP, signale-le aux modos.
+
+          ## Modération
+
+          - Les modos peuvent timeout, kick ou ban en cas d'écart.
+          - En cas de problème : ping `@🛡️ Modérateur`.
+
+          ## Ce que t'obtiens en validant
+
+          Le rôle 🎓 **Lycéen vérifié** → accès à tout le serveur.
+
+      - id: ch_bienvenue
+        name: "👋-bienvenue"
+        type: text
+        topic: "Présente-toi ! Pseudo, ce qui t'intéresse, ton vibe tech."
+        overwrites:
+          # Lycéens vérifiés peuvent envoyer
+          - target: lyceen_verifie
+            allow: [SEND_MESSAGES, ADD_REACTIONS]
+          - target: intervenant
+            allow: [SEND_MESSAGES, ADD_REACTIONS]
+          - target: staff_lycee
+            allow: [SEND_MESSAGES, ADD_REACTIONS]
+        slowmode_delay: 30   # 30s pour éviter le flood
+
+      - id: ch_annonces
+        name: "📢-annonces"
+        type: announcement
+        topic: "Annonces officielles. Pas d'écriture lycéens."
+        overwrites:
+          - target: "@everyone"
+            deny: [SEND_MESSAGES, ADD_REACTIONS]
+          - target: administrateur
+            allow: [SEND_MESSAGES, MENTION_EVERYONE]
+          - target: moderateur
+            allow: [SEND_MESSAGES]
+
+      - id: ch_choix_interets
+        name: "🎯-choix-intérêts"
+        type: text
+        topic: "Réagis pour t'attribuer des centres d'intérêt et recevoir les pings ciblés."
+        overwrites:
+          - target: "@everyone"
+            deny: [SEND_MESSAGES]
+            allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, ADD_REACTIONS]
+        first_message: |
+          # 🎯 Tes centres d'intérêt
+
+          Réagis avec l'emoji correspondant pour t'auto-attribuer le rôle.
+          Tu peux en cumuler autant que tu veux. Re-clique pour retirer.
+
+          - 💻 → **Curieux dev** (code, projets perso, web, mobile…)
+          - 🤖 → **Curieux IA** (LLMs, ML, ce que ça change…)
+          - 🔐 → **Curieux cyber** (sécurité, CTF, défense…)
+          - 🛠️ → **Bidouilleur confirmé** (tu bidouilles déjà depuis un moment)
+
+          Ces rôles servent juste à recevoir les pings qui t'intéressent.
+
+  # === 1. DISCUSSIONS GÉNÉRALES ==============================================
+  - id: cat_discussion
+    name: "💬 Discussions"
+    position: 1
+    overwrites:
+      - target: "@everyone"
+        deny: [VIEW_CHANNEL]
+      - target: lyceen_verifie
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: intervenant
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: staff_lycee
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES]
+    channels:
+      - id: ch_general
+        name: "💬-général"
+        type: text
+        topic: "Chat général. Pas de sujet imposé."
+      - id: ch_questions_debutants
+        name: "❓-questions-débutants"
+        type: text
+        topic: "Aucune question n'est bête. Pour de vrai."
+        slowmode_delay: 0
+      - id: ch_hors_sujet
+        name: "🎲-hors-sujet"
+        type: text
+        topic: "Tout ce qui n'est pas tech. Restez corrects."
+        slowmode_delay: 10
+
+  # === 2. CYBER ===============================================================
+  - id: cat_cyber
+    name: "🔐 Cybersécurité"
+    position: 2
+    overwrites:
+      - target: "@everyone"
+        deny: [VIEW_CHANNEL]
+      - target: lyceen_verifie
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: intervenant
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: staff_lycee
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY]
+    channels:
+      - id: ch_cyber_chat
+        name: "🛡️-discussions"
+        type: text
+        topic: "Cybersécurité : actu, questions, débats."
+      - id: ch_ctf
+        name: "🚩-ctf-et-challenges"
+        type: text
+        topic: "CTF, Root-Me, HTB. Partage writeups & équipes. Pas de spoiler !"
+      - id: ch_veille_cyber
+        name: "📰-veille"
+        type: text
+        topic: "Articles, news, vidéos. Évitez les hot takes."
+
+  # === 3. IA =================================================================
+  - id: cat_ia
+    name: "🤖 IA & Données"
+    position: 3
+    overwrites:
+      - target: "@everyone"
+        deny: [VIEW_CHANNEL]
+      - target: lyceen_verifie
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: intervenant
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: staff_lycee
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY]
+    channels:
+      - id: ch_ia_chat
+        name: "💡-discussions"
+        type: text
+        topic: "IA : comment ça marche, ce que ça change, ce que ça change pas."
+      - id: ch_ia_projets
+        name: "🚀-vos-projets"
+        type: text
+        topic: "Projets IA, expériences, prompts intéressants."
+
+  # === 4. DEV ================================================================
+  - id: cat_dev
+    name: "💻 Code & Dev"
+    position: 4
+    overwrites:
+      - target: "@everyone"
+        deny: [VIEW_CHANNEL]
+      - target: lyceen_verifie
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: intervenant
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: staff_lycee
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY]
+    channels:
+      - id: ch_dev_chat
+        name: "⌨️-discussions"
+        type: text
+        topic: "Tout dev : web, mobile, jeux, scripts, choix de langage…"
+      - id: ch_dev_aide
+        name: "🆘-aide-code"
+        type: text
+        topic: "Bloqué·e sur un truc ? Colle ton code (formaté !) et explique."
+      - id: ch_dev_projets
+        name: "✨-vos-projets"
+        type: text
+        topic: "Vos créations. Repos GitHub, sites perso, idées en cours."
+
+  # === 5. PARCOURS & ORIENTATION =============================================
+  - id: cat_parcours
+    name: "🎓 Parcours & Orientation"
+    position: 5
+    overwrites:
+      - target: "@everyone"
+        deny: [VIEW_CHANNEL]
+      - target: lyceen_verifie
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: intervenant
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: staff_lycee
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+    channels:
+      - id: ch_parcours
+        name: "🎓-études-post-bac"
+        type: text
+        topic: "BTS, BUT, école, fac, alternance, autodidacte… vos questions."
+      - id: ch_metiers
+        name: "💼-métiers"
+        type: text
+        topic: "Questions métiers. Les intervenants répondent ici."
+      - id: ch_ressources
+        name: "📚-ressources"
+        type: text
+        topic: "Livres, plateformes, comptes à suivre. Lecture seule."
+        overwrites:
+          - target: lyceen_verifie
+            deny: [SEND_MESSAGES]
+            allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, ADD_REACTIONS]
+          - target: administrateur
+            allow: [SEND_MESSAGES, MANAGE_MESSAGES]
+          - target: moderateur
+            allow: [SEND_MESSAGES]
+
+  # === 6. VOCAL ==============================================================
+  - id: cat_vocal
+    name: "🔊 Vocal"
+    position: 6
+    overwrites:
+      - target: "@everyone"
+        deny: [VIEW_CHANNEL]
+      - target: lyceen_verifie
+        allow: [VIEW_CHANNEL, CONNECT, SPEAK, STREAM, USE_VAD]
+      - target: intervenant
+        allow: [VIEW_CHANNEL, CONNECT, SPEAK, STREAM, USE_VAD]
+      - target: staff_lycee
+        allow: [VIEW_CHANNEL, CONNECT, SPEAK]
+    channels:
+      - id: ch_voc_chill
+        name: "🛋️ Chill"
+        type: voice
+        user_limit: 0
+      - id: ch_voc_etude
+        name: "📚 Étude en groupe"
+        type: voice
+        user_limit: 0
+      - id: ch_voc_intervention
+        name: "🎤 Salon intervention"
+        type: voice
+        user_limit: 50
+        note: "Réservé aux moments où un intervenant parle à plusieurs."
+
+  # === 7. SESSION LIVE (privé, flux webhooks temps réel) =====================
+  # Catégorie dédiée aux flux entrants pendant l'intervention.
+  # Webhooks externes (site /questions, n8n, etc.) postent ici.
+  # Intentionnellement séparée de "Staff" pour pouvoir tout couper/archiver
+  # facilement entre deux sessions.
+  - id: cat_session_live
+    name: "🔴 Session live"
+    position: 7
+    overwrites:
+      - target: "@everyone"
+        deny: [VIEW_CHANNEL]
+      - target: moderateur
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS]
+      - target: administrateur
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, ADD_REACTIONS, MANAGE_WEBHOOKS]
+      # Note: pour ajouter les intervenants à une session live, leur donner
+      # accès manuellement OU créer un rôle "Intervenant-session-N" temporaire.
+    channels:
+      - id: ch_questions_live
+        name: "❓-questions-live"
+        type: text
+        topic: "Questions anonymes du site /questions. Push webhook auto."
+        # Salon où le webhook du form /questions posera chaque nouvelle
+        # question soumise par les lycéens. Tu peux ping `@here` depuis le
+        # payload n8n/backend si tu veux une notif sonore.
+
+      # Décommente / ajoute si tu redirigerais aussi votes & quiz sur Discord :
+      # - id: ch_votes_live
+      #   name: "🗳️-votes-live"
+      #   type: text
+      #   topic: "Updates de vote en temps réel depuis n8n."
+      #
+      # - id: ch_quiz_live
+      #   name: "📊-quiz-scores-live"
+      #   type: text
+      #   topic: "Scores quiz agrégés. Push depuis l'API."
+
+  # === 8. STAFF (privé) ======================================================
+  - id: cat_staff
+    name: "🔧 Staff"
+    position: 8
+    overwrites:
+      - target: "@everyone"
+        deny: [VIEW_CHANNEL]
+      - target: moderateur
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, CONNECT, SPEAK]
+      - target: administrateur
+        allow: [VIEW_CHANNEL, READ_MESSAGE_HISTORY, SEND_MESSAGES, CONNECT, SPEAK]
+    channels:
+      - id: ch_staff_chat
+        name: "🔧-staff-chat"
+        type: text
+        topic: "Discussions modération."
+      - id: ch_staff_signalements
+        name: "🚨-signalements"
+        type: text
+        topic: "Bot pousse ici les signalements et alertes auto."
+      - id: ch_staff_logs
+        name: "📊-logs-bot"
+        type: text
+        topic: "Logs automatiques (join/leave/timeout/edits)."
+      - id: ch_staff_voc
+        name: "🔊 Staff vocal"
+        type: voice
+
+# -----------------------------------------------------------------------------
+# Webhooks
+# -----------------------------------------------------------------------------
+# Le bot crée les webhooks au moment de l'apply. Les URLs sont des SECRETS :
+# le bot les envoie en DM à l'admin qui a lancé la commande — jamais en clair
+# dans un salon. À stocker ensuite dans Infisical (ou équivalent) et à
+# référencer depuis n8n / le backend du site.
+#
+# Idempotence : matching par (channel + name). Si un webhook avec ce nom
+# existe déjà dans le bon salon, ne pas recréer ; juste rappeler son URL
+# en DM si demandé via `/server-config webhooks reveal`.
+# -----------------------------------------------------------------------------
+
+webhooks:
+  - id: wh_questions_live
+    channel: ch_questions_live
+    name: "📥 Questions du site"
+    avatar_url: null   # optionnel, sinon utilise l'avatar du bot
+    description: >
+      Reçoit les questions anonymes soumises via /questions sur le site
+      d'intervention. Consommé par n8n ou directement par le backend FastAPI.
+
+  # Décommente / ajoute selon ce que tu veux pousser dans Discord :
+  # - id: wh_votes_live
+  #   channel: ch_votes_live
+  #   name: "🗳️ Votes"
+  #   description: "Updates de vote en temps réel depuis n8n."
+  #
+  # - id: wh_quiz_scores
+  #   channel: ch_quiz_live
+  #   name: "📊 Quiz scores"
+  #   description: "Scores agrégés du quiz."
+
+# -----------------------------------------------------------------------------
+# Réactions auto-rôles
+# -----------------------------------------------------------------------------
+# Le bot doit poser ces réactions sur les messages indiqués et les écouter
+# pour attribuer/retirer le rôle correspondant.
+# -----------------------------------------------------------------------------
+
+reaction_roles:
+  - channel: ch_regles
+    message_marker: "first_message"   # le message créé par le bot ci-dessus
+    bindings:
+      - emoji: "✅"
+        role: lyceen_verifie
+        mode: add_only   # ne retire pas si on dé-réagit (sinon on perdrait l'accès)
+
+  - channel: ch_choix_interets
+    message_marker: "first_message"
+    bindings:
+      - emoji: "💻"
+        role: interet_dev
+        mode: toggle
+      - emoji: "🤖"
+        role: interet_ia
+        mode: toggle
+      - emoji: "🔐"
+        role: interet_cyber
+        mode: toggle
+      - emoji: "🛠️"
+        role: interet_bidouilleur
+        mode: toggle
+
+# -----------------------------------------------------------------------------
+# Décisions à valider par toi (Phase 0 — comme dans ton plan)
+# -----------------------------------------------------------------------------
+# - [ ] Nom du serveur (`server.name`)
+# - [ ] Verification level (HIGH = phone obligatoire — barrière ou OK ?)
+# - [ ] Community features activées d'office ? (impose certaines configs)
+# - [ ] Tu prends des modérateurs (autres que toi) ou tu fais seul ?
+# - [ ] Tu invites des intervenants externes ? (sinon supprimer ce rôle)
+# - [ ] Staff lycée présent sur le serveur ou pas ? (sinon supprimer)
+# - [ ] Système de "cohortes" par lycée si plusieurs interventions ?
+#       (À ajouter en V2 : rôles @Lycée-XYZ pour scoper)
+# - [ ] Couleurs des rôles : à ajuster selon ton goût
+# - [ ] Tu veux un salon `#bot-commands` pour les slash commands ?
