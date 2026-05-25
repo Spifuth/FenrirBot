@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY src/ ./src/
+COPY specs/ ./specs/
 COPY run.py .
 
 # Create data directory for persistent state
