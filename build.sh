@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "▶ Building fenrirbot:latest ..."
-docker build -t fenrirbot:latest .
+docker build --pull -t fenrirbot:latest .
 echo "✓ fenrirbot:latest built"
 
 echo ""
