@@ -19,7 +19,8 @@ python run.py
 pip install -r requirements.txt
 ```
 
-There are no automated tests in this project.
+Run the tests with `pytest -q` from the repo root (13 tests under `tests/`).
+CI runs them on every pull request and on pushes to `dev`.
 
 ## Architecture
 
