@@ -174,7 +174,11 @@ class DowntimeCog(commands.Cog, name="Downtime"):
     ) -> bool:
         """Announce a scheduled maintenance. Returns True only if it was sent."""
         channel = self.bot.get_channel(maintenance.channel_id)
-        if not isinstance(channel, discord.TextChannel):
+        # TextChannel or Thread: /scheduled captures interaction.channel.id with
+        # no type check, so a maintenance scheduled from inside a thread stores a
+        # thread id. Thread.send() works fine; only the incident-thread creation
+        # below doesn't apply there, and that's already best-effort.
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             print(
                 f"[Downtime] Channel {maintenance.channel_id} unavailable for "
                 f"{maintenance.service}; leaving it queued"
@@ -251,7 +255,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
                 f"{catchup_note}"
             )
             view.incident_thread = thread
-        except discord.HTTPException as e:
+        except Exception as e:
             print(f"[Downtime] Incident thread failed for {maintenance.service}: {e!r}")
 
         await view.start_timer()
