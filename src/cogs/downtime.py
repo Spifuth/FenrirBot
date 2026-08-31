@@ -12,7 +12,12 @@ from ..config import config
 from ..utils.embeds import DowntimeEmbed, ServiceType, MaintenanceType
 from ..utils.docker import docker_manager
 from ..utils.views import DowntimeView
-from ..utils.helpers import get_announcement_channel, get_notification_mention
+from ..utils.helpers import (
+    get_announcement_channel,
+    get_notification_mention,
+    parse_local_datetime,
+    format_paris,
+)
 
 @dataclass
 class ScheduledMaintenance:
@@ -460,7 +465,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         """Announce scheduled maintenance via slash command with auto-trigger"""
         # Parse the datetime
         try:
-            scheduled_time = datetime.strptime(when, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+            scheduled_time = parse_local_datetime(when)
         except ValueError:
             await interaction.response.send_message(
                 "❌ Format de date invalide ! Utilisez: `YYYY-MM-DD HH:MM`\n"
@@ -487,7 +492,8 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             maint_type = MaintenanceType.DOWNTIME
         
         # Format the time nicely for display
-        when_display = scheduled_time.strftime("%A %d %B %Y à %H:%M")
+        # scheduled_time is UTC; the user typed Paris local, so render it back in Paris
+        when_display = format_paris(scheduled_time, "%A %d %B %Y à %H:%M")
         embed = DowntimeEmbed.scheduled(
             service, when_display, duration, reason, 
             interaction.user, service_type, maint_type

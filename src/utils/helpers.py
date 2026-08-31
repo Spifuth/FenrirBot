@@ -229,8 +229,8 @@ def format_uptime(seconds: int) -> str:
 def format_timestamp(dt: datetime, style: str = "relative") -> str:
     """
     Format a datetime for Discord display.
-    
-    Styles: 
+
+    Styles:
         - relative: "2 hours ago"
         - short: "12/01/2026 10:30"
         - long: "12 January 2026 at 10:30"
@@ -243,6 +243,21 @@ def format_timestamp(dt: datetime, style: str = "relative") -> str:
         return f"<t:{int(dt.timestamp())}:F>"
     else:
         return dt.strftime("%d/%m/%Y %H:%M")
+
+
+def parse_local_datetime(when: str) -> datetime:
+    """Parse 'YYYY-MM-DD HH:MM' as Paris wall-clock time; return an aware UTC datetime.
+
+    The bot runs with TZ=Europe/Paris and users type local time. Storing UTC keeps
+    the JSON round-trip and the `<t:...>` Discord timestamps unambiguous.
+    """
+    naive = datetime.strptime(when, "%Y-%m-%d %H:%M")
+    return naive.replace(tzinfo=PARIS_TZ).astimezone(timezone.utc)
+
+
+def format_paris(dt: datetime, fmt: str) -> str:
+    """Render an aware datetime in Paris local time."""
+    return dt.astimezone(PARIS_TZ).strftime(fmt)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
