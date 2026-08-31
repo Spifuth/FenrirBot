@@ -75,6 +75,11 @@ def _bar(value: float, width: int = 10) -> str:
     return "[" + "█" * filled + "·" * (width - filled) + "]"
 
 
+def _author_name(author: "discord.User | discord.Member | None") -> str:
+    """Footer name for an author that may no longer be resolvable."""
+    return author.display_name if author is not None else "inconnu"
+
+
 class DowntimeEmbed:
     """Helper class to create consistent downtime embeds"""
 
@@ -83,7 +88,7 @@ class DowntimeEmbed:
         service: str,
         reason: str,
         estimated_duration: str,
-        author: discord.User | discord.Member,
+        author: discord.User | discord.Member | None,
         service_type: ServiceType = ServiceType.OTHER,
         maintenance_type: MaintenanceType | None = None,
     ) -> discord.Embed:
@@ -98,7 +103,7 @@ class DowntimeEmbed:
         embed.add_field(name="Type", value=f"```\n{maintenance_type.label}\n```", inline=True)
         embed.add_field(name="Durée estimée", value=f"```\n{estimated_duration}\n```", inline=True)
         embed.add_field(name="Détails", value=f"```\n{reason}\n```", inline=False)
-        embed.set_footer(text=f"Fenrir · Maintenance · {author.display_name}")
+        embed.set_footer(text=f"Fenrir · Maintenance · {_author_name(author)}")
         return embed
 
     @staticmethod

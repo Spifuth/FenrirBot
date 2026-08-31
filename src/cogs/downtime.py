@@ -117,7 +117,16 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             if now >= maintenance.scheduled_time:
                 # Check if it's a catchup (more than 5 minutes late)
                 is_catchup = (now - maintenance.scheduled_time).total_seconds() > 300
-                await self._trigger_scheduled_downtime(maintenance, is_catchup=is_catchup)
+                try:
+                    sent = await self._trigger_scheduled_downtime(maintenance, is_catchup=is_catchup)
+                except Exception as e:
+                    # One bad entry must never end the loop — tasks.loop stops on an
+                    # unhandled exception, which would silence every future maintenance.
+                    print(f"[Downtime] Trigger failed for {maintenance.service}: {e!r}")
+                    continue
+                if not sent:
+                    # Keep it queued rather than deleting it unannounced.
+                    continue
                 maintenance.announced = True
                 triggered_any = True
         
@@ -145,8 +154,13 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         if missed:
             print(f"[Downtime] Found {len(missed)} missed maintenance(s), triggering catchup...")
             for maintenance in missed:
-                await self._trigger_scheduled_downtime(maintenance, is_catchup=True)
-                maintenance.announced = True
+                try:
+                    sent = await self._trigger_scheduled_downtime(maintenance, is_catchup=True)
+                except Exception as e:
+                    print(f"[Downtime] Catchup failed for {maintenance.service}: {e!r}")
+                    continue
+                if sent:
+                    maintenance.announced = True
             
             # Clean up and save
             self._scheduled_maintenances = [
@@ -155,14 +169,26 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             ]
             self._save_scheduled_maintenances()
     
-    async def _trigger_scheduled_downtime(self, maintenance: ScheduledMaintenance, is_catchup: bool = False):
-        """Trigger the downtime announcement for a scheduled maintenance"""
+    async def _trigger_scheduled_downtime(
+        self, maintenance: ScheduledMaintenance, is_catchup: bool = False
+    ) -> bool:
+        """Announce a scheduled maintenance. Returns True only if it was sent."""
         channel = self.bot.get_channel(maintenance.channel_id)
-        if not channel:
-            return
-        
+        if not isinstance(channel, discord.TextChannel):
+            print(
+                f"[Downtime] Channel {maintenance.channel_id} unavailable for "
+                f"{maintenance.service}; leaving it queued"
+            )
+            return False
+
+        # get_user only reads the cache; fall back to the API, and tolerate a
+        # user who has left. The embed renders "inconnu" rather than crashing.
         author = self.bot.get_user(maintenance.author_id)
-        assert author is not None
+        if author is None:
+            try:
+                author = await self.bot.fetch_user(maintenance.author_id)
+            except discord.HTTPException:
+                author = None
         service_type = self._get_service_type(maintenance.service)
 
         try:
@@ -226,7 +252,8 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         view.incident_thread = thread
         
         await view.start_timer()
-    
+        return True
+
     def _refresh_service_cache(self):
         """Refresh the cached lists of containers and stacks"""
         self._containers_cache = set(docker_manager.get_container_names(include_stopped=True))
