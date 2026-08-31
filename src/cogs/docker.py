@@ -20,13 +20,13 @@ class DockerCog(commands.Cog, name="Docker"):
     @tasks.loop(minutes=5)
     async def auto_refresh(self):
         """Auto-refresh container list every 5 minutes"""
-        docker_manager.refresh()
-    
+        await docker_manager.refresh_async()
+
     @auto_refresh.before_loop
     async def before_auto_refresh(self):
         await self.bot.wait_until_ready()
         # Initial refresh on startup
-        docker_manager.refresh()
+        await docker_manager.refresh_async()
 
     # ========== Autocomplete Functions ==========
     
@@ -131,7 +131,7 @@ class DockerCog(commands.Cog, name="Docker"):
         """Manually refresh the container list"""
         await interaction.response.defer(ephemeral=True)
         
-        containers = docker_manager.refresh()
+        containers = await docker_manager.refresh_async()
         stacks = docker_manager.get_stacks()
         
         await interaction.followup.send(
