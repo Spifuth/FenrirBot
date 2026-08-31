@@ -231,26 +231,29 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             view=view
         )
         view.message = msg
-        
-        # Create incident thread
-        thread = await msg.create_thread(
-            name=f"{maint_type.icon} {maintenance.service} - {maint_type.label}",
-            auto_archive_duration=1440
-        )
-        
-        catchup_note = ""
-        if is_catchup:
-            catchup_note = f"\n⚠️ **Note:** This maintenance was triggered late because the bot was offline.\n"
 
-        await thread.send(
-            f"📋 **Scheduled Maintenance Thread** for **{maintenance.service}**\n\n"
-            f"⏰ This maintenance was scheduled and has now started automatically.\n"
-            f"📝 Reason: {maintenance.reason}\n"
-            f"⏱️ Expected duration: {maintenance.duration}"
-            f"{catchup_note}"
-        )
-        view.incident_thread = thread
-        
+        # The announcement is public from here: the role has been pinged. A
+        # failure below must never bubble up, because the caller would leave
+        # the entry unannounced and the 30s loop would re-ping every tick.
+        try:
+            thread = await msg.create_thread(
+                name=f"{maint_type.icon} {maintenance.service} - {maint_type.label}",
+                auto_archive_duration=1440
+            )
+            catchup_note = ""
+            if is_catchup:
+                catchup_note = f"\n⚠️ **Note:** This maintenance was triggered late because the bot was offline.\n"
+            await thread.send(
+                f"📋 **Scheduled Maintenance Thread** for **{maintenance.service}**\n\n"
+                f"⏰ This maintenance was scheduled and has now started automatically.\n"
+                f"📝 Reason: {maintenance.reason}\n"
+                f"⏱️ Expected duration: {maintenance.duration}"
+                f"{catchup_note}"
+            )
+            view.incident_thread = thread
+        except discord.HTTPException as e:
+            print(f"[Downtime] Incident thread failed for {maintenance.service}: {e!r}")
+
         await view.start_timer()
         return True
 
