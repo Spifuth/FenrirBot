@@ -12,6 +12,7 @@ from ..config import config
 from ..utils.embeds import DowntimeEmbed, ServiceType, MaintenanceType
 from ..utils.docker import docker_manager
 from ..utils.views import DowntimeView
+from ..utils.incidents import IncidentRecord, incident_store
 from ..utils.helpers import (
     get_announcement_channel,
     get_notification_mention,
@@ -236,6 +237,16 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
         view.message = msg
 
+        incident_store.add(IncidentRecord(
+            message_id=msg.id,
+            channel_id=channel.id,
+            service=maintenance.service,
+            author_id=maintenance.author_id,
+            duration_str=maintenance.duration,
+            service_type=service_type.value,
+            maintenance_type=maint_type.value,
+        ))
+
         # The announcement is public from here: the role has been pinged. A
         # failure below must never bubble up, because the caller would leave
         # the entry unannounced and the 30s loop would re-ping every tick.
@@ -439,6 +450,16 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             view=view
         )
         view.message = msg
+
+        incident_store.add(IncidentRecord(
+            message_id=msg.id,
+            channel_id=channel.id,
+            service=service,
+            author_id=interaction.user.id,
+            duration_str=duration,
+            service_type=svc_type.value,
+            maintenance_type=maint_type.value,
+        ))
 
         # Create thread for updates
         thread = await msg.create_thread(

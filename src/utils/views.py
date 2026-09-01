@@ -7,6 +7,7 @@ import asyncio
 import re
 
 from .embeds import DowntimeEmbed, MaintenanceType, ServiceType
+from .incidents import IncidentRecord, IncidentStore, incident_store
 
 
 def parse_duration(duration_str: str) -> timedelta | None:
@@ -45,8 +46,12 @@ class DowntimeView(ui.View):
         notification_mention: str | None = "@here",
         service_type: ServiceType = ServiceType.OTHER,
         maintenance_type: MaintenanceType = MaintenanceType.DOWNTIME,
+        store: IncidentStore | None = None,
     ):
-        super().__init__(timeout=86400)
+        # timeout=None + stable custom_ids => discord.py treats this as a
+        # persistent view, so bot.add_view() can revive it after a restart.
+        super().__init__(timeout=None)
+        self.store = store or incident_store
         self.service = service
         self.author_id = author_id
         self.duration_str = duration_str
@@ -94,7 +99,8 @@ class DowntimeView(ui.View):
 
         self.timer_task = asyncio.create_task(timer_callback())
 
-    @ui.button(label="✅ Service Restored", style=discord.ButtonStyle.green)
+    @ui.button(label="✅ Service Restored", style=discord.ButtonStyle.green,
+               custom_id="fenrir:incident:restore")
     async def restore_button(self, interaction: discord.Interaction, button: ui.Button):
         """Button to mark service as restored"""
         if interaction.user.id != self.author_id:
@@ -103,6 +109,9 @@ class DowntimeView(ui.View):
                 ephemeral=True
             )
             return
+
+        # Four REST calls follow; Discord's initial-response deadline is 3s.
+        await interaction.response.defer(ephemeral=True)
 
         self.resolved = True
 
@@ -144,14 +153,18 @@ class DowntimeView(ui.View):
             )
             await self.incident_thread.edit(archived=True, locked=True)
 
-        await interaction.response.send_message(
+        if interaction.message is not None:
+            self.store.remove(interaction.message.id)
+
+        await interaction.followup.send(
             f"✅ **{self.service}** marked as restored!",
             ephemeral=True
         )
 
         self.stop()
 
-    @ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+    @ui.button(label="❌ Cancel", style=discord.ButtonStyle.red,
+               custom_id="fenrir:incident:cancel")
     async def cancel_button(self, interaction: discord.Interaction, button: ui.Button):
         """Button to cancel/dismiss the downtime (false alarm)"""
         if interaction.user.id != self.author_id:
@@ -160,6 +173,8 @@ class DowntimeView(ui.View):
                 ephemeral=True
             )
             return
+
+        await interaction.response.defer(ephemeral=True)
 
         self.resolved = True
 
@@ -175,7 +190,10 @@ class DowntimeView(ui.View):
             view=self
         )
 
-        await interaction.response.send_message(
+        if interaction.message is not None:
+            self.store.remove(interaction.message.id)
+
+        await interaction.followup.send(
             f"🚫 Downtime announcement for **{self.service}** has been cancelled.",
             ephemeral=True
         )
@@ -196,3 +214,23 @@ class DowntimeView(ui.View):
                 await self.message.edit(view=self)
             except discord.NotFound:
                 pass
+
+    @classmethod
+    def from_record(cls, record: IncidentRecord, store: IncidentStore) -> "DowntimeView":
+        """Rebuild a view from disk after a restart."""
+        try:
+            service_type = ServiceType(record.service_type)
+        except ValueError:
+            service_type = ServiceType.OTHER
+        try:
+            maintenance_type = MaintenanceType(record.maintenance_type)
+        except ValueError:
+            maintenance_type = MaintenanceType.DOWNTIME
+        return cls(
+            service=record.service,
+            author_id=record.author_id,
+            duration_str=record.duration_str,
+            service_type=service_type,
+            maintenance_type=maintenance_type,
+            store=store,
+        )

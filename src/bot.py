@@ -6,6 +6,8 @@ from typing import Optional
 
 from .config import config
 from .utils.webhook_server import WebhookServer
+from .utils.incidents import incident_store
+from .utils.views import DowntimeView
 
 
 class FenrirBot(commands.Bot):
@@ -57,6 +59,18 @@ class FenrirBot(commands.Bot):
             print(f"  ✅ Synced {len(synced)} slash command(s)")
         except Exception as e:
             print(f"  ❌ Failed to sync commands: {e}")
+
+        # Revive the buttons on any incident that was still open at shutdown.
+        revived = 0
+        for record in incident_store.load().values():
+            try:
+                self.add_view(DowntimeView.from_record(record, incident_store),
+                              message_id=record.message_id)
+                revived += 1
+            except Exception as e:
+                print(f"  ⚠️ Could not revive incident {record.message_id}: {e!r}")
+        if revived:
+            print(f"  ✅ Revived {revived} open incident view(s)")
 
     async def on_ready(self):
         """Called when the bot is fully connected and ready"""
