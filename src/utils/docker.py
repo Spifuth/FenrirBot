@@ -3,7 +3,7 @@
 import asyncio
 import json
 from pathlib import Path
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
 
