@@ -38,6 +38,7 @@ def summary_from_diffs(
     s.categories_edited = len(cat_diff.to_edit)
     s.categories_unchanged = len(cat_diff.unchanged)
     s.channels_created = len(ch_diff.to_create)
+    s.channels_edited = len(ch_diff.to_edit)
     s.channels_unchanged = len(ch_diff.unchanged)
     return s
 

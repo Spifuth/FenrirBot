@@ -81,3 +81,53 @@ def test_diff_roles_edit_when_color_differs():
     edit = diff.to_edit[0]
     assert edit.role is existing
     assert "color" in edit.changed_fields
+
+
+from src.server_config.differ import diff_channels
+from src.server_config.models import CategorySpec, ChannelSpec
+
+
+@dataclass
+class FakeChannel:
+    name: str
+    topic: str = ""
+    slowmode_delay: int = 0
+
+
+@dataclass
+class FakeCategoryChannel:
+    name: str
+    position: int = 0
+    channels: list = field(default_factory=list)
+
+
+@dataclass
+class FakeGuildWithCats:
+    categories: list = field(default_factory=list)
+
+
+def test_diff_channels_reports_a_topic_change_as_an_edit():
+    live = FakeCategoryChannel(name="General", channels=[FakeChannel(name="main", topic="old")])
+    guild = FakeGuildWithCats(categories=[live])
+    cat = CategorySpec(id="c1", name="General", channels=[
+        ChannelSpec(id="ch1", name="main", topic="new")
+    ])
+
+    diff = diff_channels(guild, [cat])
+
+    assert len(diff.to_edit) == 1
+    assert diff.to_edit[0][1].name == "main"
+    assert diff.unchanged == []
+
+
+def test_diff_channels_reports_a_match_as_unchanged():
+    live = FakeCategoryChannel(name="General", channels=[FakeChannel(name="main", topic="same")])
+    guild = FakeGuildWithCats(categories=[live])
+    cat = CategorySpec(id="c1", name="General", channels=[
+        ChannelSpec(id="ch1", name="main", topic="same")
+    ])
+
+    diff = diff_channels(guild, [cat])
+
+    assert diff.to_edit == []
+    assert len(diff.unchanged) == 1
