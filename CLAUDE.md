@@ -26,7 +26,7 @@ Fenrir is a discord.py bot for announcing service downtime and infrastructure ev
 
 ### Entry point and initialization flow
 
-`run.py` → `src/bot.py:create_bot()` → `FenrirBot.__init__()` → `setup_hook()` (loads cogs, syncs slash commands) → `on_ready()` (starts webhook server if enabled).
+`run.py` → `src/bot.py:create_bot()` → `FenrirBot.__init__()` → `setup_hook()` (loads cogs, syncs slash commands, revives open incident views from `data/open_incidents.json`) → `on_ready()`. The webhook server is never constructed — `WEBHOOK_ENABLED` is absent from the deployed compose and defaults to `false`.
 
 **`src/config.py`** — Single `Config` dataclass loaded from `.env` via `python-dotenv`. A module-level `config` singleton is created at import time. All cogs import this singleton directly.
 
