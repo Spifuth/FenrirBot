@@ -21,7 +21,14 @@ COPY src/ ./src/
 COPY specs/ ./specs/
 COPY run.py .
 
-# Create data directory for persistent state
-RUN mkdir -p /app/data
+# Run as an unprivileged user. This process holds the Discord token and talks
+# to socket-proxy, so it is the one container worth shrinking.
+# NOTE: the host bind mount at ${DOCKERDIR}/appdata/fenrirbot/data must be
+# chowned to 10001:10001 or the bot cannot persist scheduled maintenances.
+RUN adduser -D -u 10001 fenrir \
+    && mkdir -p /app/data \
+    && chown -R fenrir:fenrir /app
+
+USER fenrir
 
 CMD ["python", "run.py"]
