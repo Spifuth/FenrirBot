@@ -2,7 +2,7 @@
 
 import discord
 from discord import ui
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 import re
 
@@ -47,6 +47,7 @@ class DowntimeView(ui.View):
         service_type: ServiceType = ServiceType.OTHER,
         maintenance_type: MaintenanceType = MaintenanceType.DOWNTIME,
         store: IncidentStore | None = None,
+        started_at: datetime | None = None,
     ):
         # timeout=None + stable custom_ids => discord.py treats this as a
         # persistent view, so bot.add_view() can revive it after a restart.
@@ -74,7 +75,7 @@ class DowntimeView(ui.View):
         self.incident_thread: discord.Thread | None = None
 
         self.duration = parse_duration(duration_str)
-        self.start_time = datetime.now()
+        self.start_time = started_at if started_at is not None else datetime.now(timezone.utc)
 
     async def start_timer(self):
         """Start a background timer that reminds when duration is up"""
@@ -118,7 +119,7 @@ class DowntimeView(ui.View):
         if self.timer_task:
             self.timer_task.cancel()
 
-        actual_duration = datetime.now() - self.start_time
+        actual_duration = datetime.now(timezone.utc) - self.start_time
         hours, remainder = divmod(int(actual_duration.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
 
@@ -226,6 +227,14 @@ class DowntimeView(ui.View):
             maintenance_type = MaintenanceType(record.maintenance_type)
         except ValueError:
             maintenance_type = MaintenanceType.DOWNTIME
+        # Fall back to "now" on a missing or unparseable timestamp rather
+        # than raising -- a bad/old record must still revive the buttons.
+        started_at = None
+        if record.started_at:
+            try:
+                started_at = datetime.fromisoformat(record.started_at)
+            except ValueError:
+                started_at = None
         return cls(
             service=record.service,
             author_id=record.author_id,
@@ -233,4 +242,5 @@ class DowntimeView(ui.View):
             service_type=service_type,
             maintenance_type=maintenance_type,
             store=store,
+            started_at=started_at,
         )

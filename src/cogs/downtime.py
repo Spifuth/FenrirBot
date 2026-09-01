@@ -237,15 +237,19 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
         view.message = msg
 
-        incident_store.add(IncidentRecord(
-            message_id=msg.id,
-            channel_id=channel.id,
-            service=maintenance.service,
-            author_id=maintenance.author_id,
-            duration_str=maintenance.duration,
-            service_type=service_type.value,
-            maintenance_type=maint_type.value,
-        ))
+        try:
+            incident_store.add(IncidentRecord(
+                message_id=msg.id,
+                channel_id=channel.id,
+                service=maintenance.service,
+                author_id=maintenance.author_id,
+                duration_str=maintenance.duration,
+                service_type=service_type.value,
+                maintenance_type=maint_type.value,
+                started_at=datetime.now(timezone.utc).isoformat(),
+            ))
+        except Exception as e:
+            print(f"[Downtime] Could not persist incident {msg.id}: {e!r}")
 
         # The announcement is public from here: the role has been pinged. A
         # failure below must never bubble up, because the caller would leave
@@ -451,15 +455,19 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
         view.message = msg
 
-        incident_store.add(IncidentRecord(
-            message_id=msg.id,
-            channel_id=channel.id,
-            service=service,
-            author_id=interaction.user.id,
-            duration_str=duration,
-            service_type=svc_type.value,
-            maintenance_type=maint_type.value,
-        ))
+        try:
+            incident_store.add(IncidentRecord(
+                message_id=msg.id,
+                channel_id=channel.id,
+                service=service,
+                author_id=interaction.user.id,
+                duration_str=duration,
+                service_type=svc_type.value,
+                maintenance_type=maint_type.value,
+                started_at=datetime.now(timezone.utc).isoformat(),
+            ))
+        except Exception as e:
+            print(f"[Downtime] Could not persist incident {msg.id}: {e!r}")
 
         # Create thread for updates
         thread = await msg.create_thread(

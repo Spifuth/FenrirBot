@@ -23,6 +23,7 @@ class IncidentRecord:
     duration_str: str
     service_type: str      # ServiceType value
     maintenance_type: str  # MaintenanceType value
+    started_at: str = ""   # ISO-8601 UTC; "" for records written before this field existed
 
 
 class IncidentStore:
