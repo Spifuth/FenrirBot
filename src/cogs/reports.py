@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from ..config import config
+from ..utils.permissions import admin_only
 from ..utils.victoriametrics import VictoriaMetricsClient
 
 
@@ -71,6 +72,7 @@ class ReportsCog(commands.Cog, name="Reports"):
         self.vm = VictoriaMetricsClient(config.victoriametrics_url) if config and config.victoriametrics_url else None
 
     @app_commands.command(name="rapport", description="📊 Afficher un rapport de performance du serveur")
+    @admin_only()
     @app_commands.describe(periode="Période du rapport (défaut: quotidien)")
     @app_commands.choices(periode=[
         app_commands.Choice(name="Quotidien (24h)", value="daily"),

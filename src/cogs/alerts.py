@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from ..config import config
 from ..utils.grafana import GrafanaClient
+from ..utils.permissions import admin_only
 
 
 _SEV_WIDTH = 8  # len("CRITICAL") — all labels padded to this so · aligns
@@ -68,6 +69,7 @@ class AlertsCog(commands.Cog, name="Alerts"):
         )
 
     @app_commands.command(name="alerts", description="🚨 Afficher les alertes Grafana actives")
+    @admin_only()
     async def alerts_slash(self, interaction: discord.Interaction):
         if not self.grafana:
             await interaction.response.send_message(

@@ -19,6 +19,7 @@ from ..server_config.applier import (
 )
 from ..server_config.resolver import Resolver
 from ..server_config.state import load_state, save_state
+from ..utils.permissions import admin_only
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -39,7 +40,7 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
 
     @group.command(name="validate", description="Valider une spec YAML sans rien modifier")
     @app_commands.describe(path="Chemin de la spec (défaut: specs/server-spec.yaml)")
-    @app_commands.default_permissions(administrator=True)
+    @admin_only()
     async def validate_cmd(self, interaction: discord.Interaction, path: str = DEFAULT_SPEC):
         spec_path = (REPO_ROOT / path).resolve()
         if not spec_path.is_relative_to(REPO_ROOT):
@@ -66,7 +67,7 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
 
     @group.command(name="diff", description="Diff lisible: spec vs serveur actuel")
     @app_commands.describe(path="Chemin de la spec (défaut: specs/server-spec.yaml)")
-    @app_commands.default_permissions(administrator=True)
+    @admin_only()
     async def diff_cmd(self, interaction: discord.Interaction, path: str = DEFAULT_SPEC):
         await interaction.response.defer(ephemeral=True)
         spec_path = (REPO_ROOT / path).resolve()
@@ -107,7 +108,7 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
         path="Chemin de la spec (défaut: specs/server-spec.yaml)",
         dry_run="Si True, log uniquement sans rien modifier (défaut: True)",
     )
-    @app_commands.default_permissions(administrator=True)
+    @admin_only()
     async def apply_cmd(
         self,
         interaction: discord.Interaction,
@@ -214,7 +215,7 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
 
     @group.command(name="export", description="Exporter l'état actuel du serveur en YAML")
     @app_commands.describe(output="Nom du fichier à attacher (défaut: server-spec-export.yaml)")
-    @app_commands.default_permissions(administrator=True)
+    @admin_only()
     async def export_cmd(
         self,
         interaction: discord.Interaction,
@@ -232,7 +233,7 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
 
     @webhooks_group.command(name="reveal", description="Re-DM l'URL d'un webhook existant (par id YAML)")
     @app_commands.describe(id="Identifiant YAML du webhook (ex: wh_questions_live)")
-    @app_commands.default_permissions(administrator=True)
+    @admin_only()
     async def webhooks_reveal(self, interaction: discord.Interaction, id: str):
         await interaction.response.defer(ephemeral=True)
         state = load_state()

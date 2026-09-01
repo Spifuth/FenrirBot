@@ -13,6 +13,7 @@ from ..utils.embeds import DowntimeEmbed, ServiceType, MaintenanceType
 from ..utils.docker import docker_manager
 from ..utils.views import DowntimeView
 from ..utils.incidents import IncidentRecord, incident_store
+from ..utils.permissions import admin_only
 from ..utils.helpers import (
     get_announcement_channel,
     get_notification_mention,
@@ -360,6 +361,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
     # ========== Slash Commands ==========
 
     @app_commands.command(name="up", description="🟢 Annoncer la restauration d'un service")
+    @admin_only()
     @app_commands.describe(
         service="Nom du service rétabli",
         mention="Mentionner le rôle de notification (défaut: Non)"
@@ -393,6 +395,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         await interaction.response.send_message(response, ephemeral=True)
 
     @app_commands.command(name="maintenance", description="🔧 Annoncer une maintenance (màj, backup, config, etc.)")
+    @admin_only()
     @app_commands.describe(
         service="Nom du service",
         maintenance_type="Type de maintenance",
@@ -509,6 +512,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
 
     @app_commands.command(name="scheduled", description="📅 Planifier une maintenance future")
+    @admin_only()
     @app_commands.describe(
         service="Nom du service",
         when="Date/heure (format: YYYY-MM-DD HH:MM, ex: '2026-01-15 22:00')",
@@ -610,6 +614,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
     
     @app_commands.command(name="scheduled-list", description="📋 Lister les maintenances planifiées")
+    @admin_only()
     async def scheduled_list_slash(self, interaction: discord.Interaction):
         """List all pending scheduled maintenances"""
         if not self._scheduled_maintenances:
@@ -647,6 +652,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="scheduled-cancel", description="❌ Annuler une maintenance planifiée")
+    @admin_only()
     @app_commands.describe(service="Nom du service dont la maintenance doit être annulée")
     @app_commands.autocomplete(service=service_autocomplete)
     async def scheduled_cancel_slash(self, interaction: discord.Interaction, service: str):

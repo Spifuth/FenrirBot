@@ -1,6 +1,7 @@
 """Fenrir Bot - Main bot class and initialization"""
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from typing import Optional
 
@@ -54,6 +55,8 @@ class FenrirBot(commands.Bot):
             except Exception as e:
                 print(f"  ❌ Failed to load {cog}: {e}")
 
+        self.tree.on_error = self.on_app_command_error
+
         try:
             synced = await self.tree.sync()
             print(f"  ✅ Synced {len(synced)} slash command(s)")
@@ -80,6 +83,21 @@ class FenrirBot(commands.Bot):
                 print(f"  ⚠️ Could not revive incident {record.message_id}: {e!r}")
         if revived:
             print(f"  ✅ Revived {revived} open incident view(s)")
+
+    async def on_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ):
+        """Give a denied user a clear answer instead of a silent failure."""
+        if isinstance(error, app_commands.MissingPermissions):
+            message = "⛔ Cette commande est réservée aux administrateurs."
+        else:
+            print(f"⚠️ Command error in /{interaction.command.name if interaction.command else '?'}: {error!r}")
+            message = "❌ Une erreur est survenue lors de l'exécution de cette commande."
+
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
 
     async def on_ready(self):
         """Called when the bot is fully connected and ready"""

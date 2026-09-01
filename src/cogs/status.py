@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from ..utils.embeds import DowntimeEmbed
 from ..utils.helpers import get_announcement_channel, get_notification_mention
+from ..utils.permissions import admin_only
 
 
 class StatusCog(commands.Cog, name="Status"):
@@ -15,6 +16,7 @@ class StatusCog(commands.Cog, name="Status"):
         self.bot = bot
 
     @app_commands.command(name="status", description="Envoyer une mise à jour de statut")
+    @admin_only()
     @app_commands.describe(
         message="Message de statut à envoyer",
         mention="Mentionner le rôle de notification (défaut: Non)"
@@ -37,6 +39,7 @@ class StatusCog(commands.Cog, name="Status"):
         await interaction.response.send_message(f"🏓 Pong! Latence: {latency}ms", ephemeral=True)
 
     @commands.command(name="status")
+    @commands.has_permissions(administrator=True)
     async def status_prefix(self, ctx: commands.Context, *, message: str):
         """Quick status update: !status Everything is fine"""
         channel = get_announcement_channel(self.bot, ctx.channel)
