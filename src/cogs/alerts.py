@@ -80,6 +80,20 @@ class AlertsCog(commands.Cog, name="Alerts"):
 
         alerts = await self.grafana.get_active_alerts()
 
+        if alerts is None:
+            embed = discord.Embed(
+                title="Statut inconnu",
+                description=(
+                    "Impossible de joindre Grafana — ce n'est **pas** un tout-va-bien. "
+                    "Vérifie `GRAFANA_URL` / `GRAFANA_API_KEY` et que le conteneur répond."
+                ),
+                color=0x2C2F33,
+                timestamp=datetime.now(timezone.utc),
+            )
+            embed.set_footer(text="Fenrir · Grafana injoignable")
+            await interaction.followup.send(embed=embed)
+            return
+
         if not alerts:
             embed = discord.Embed(
                 title="Aucune alerte",
