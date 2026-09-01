@@ -61,8 +61,17 @@ class FenrirBot(commands.Bot):
             print(f"  ❌ Failed to sync commands: {e}")
 
         # Revive the buttons on any incident that was still open at shutdown.
+        # load() already tolerates a corrupt/malformed store file, but an
+        # unforeseen failure here must still degrade to "no incidents
+        # revived" rather than aborting startup entirely.
+        try:
+            records = list(incident_store.load().values())
+        except Exception as e:
+            print(f"  ⚠️ Could not load incident store: {e!r}")
+            records = []
+
         revived = 0
-        for record in incident_store.load().values():
+        for record in records:
             try:
                 self.add_view(DowntimeView.from_record(record, incident_store),
                               message_id=record.message_id)

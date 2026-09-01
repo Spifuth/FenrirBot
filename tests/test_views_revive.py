@@ -60,3 +60,33 @@ def test_from_record_with_malformed_started_at_does_not_raise(tmp_path):
 
     assert view.start_time.tzinfo is not None
     assert before - timedelta(seconds=60) <= view.start_time <= after + timedelta(seconds=60)
+
+
+def test_from_record_with_naive_started_at_is_coerced_to_utc(tmp_path):
+    # No UTC offset in the string -- datetime.fromisoformat parses this fine
+    # but yields a naive datetime. restore_button later computes
+    # datetime.now(timezone.utc) - self.start_time, which raises TypeError
+    # unless from_record coerces it to aware UTC first.
+    store = IncidentStore(path=tmp_path / "open_incidents.json")
+    record = _record(started_at="2026-01-01T12:00:00")
+
+    view = DowntimeView.from_record(record, store)
+
+    assert view.start_time.tzinfo is not None
+    # Must not silently shift the wall-clock value: it becomes UTC, not
+    # reinterpreted in some other zone.
+    assert view.start_time == datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def test_view_is_persistent():
+    # Pins the headline behaviour this task exists for: timeout=None + a
+    # stable custom_id on every child is what makes bot.add_view() able to
+    # revive the view after a restart. If either regressed, add_view() would
+    # raise, the per-record except in setup_hook would swallow it, and the
+    # bot would silently degrade back to the original dead-button bug.
+    view = DowntimeView(service="traefik", author_id=1)
+    assert view.is_persistent()
+    assert view.timeout is None
+    assert sorted(c.custom_id for c in view.children) == [
+        "fenrir:incident:cancel", "fenrir:incident:restore",
+    ]

@@ -206,7 +206,12 @@ class DowntimeView(ui.View):
         self.stop()
 
     async def on_timeout(self):
-        """Called when the view times out (24h)"""
+        """Called when the view times out.
+
+        The view is constructed with timeout=None (persistent), so this
+        never fires in normal operation. Kept only in case something ever
+        constructs a DowntimeView with a non-None timeout.
+        """
         if self.message and not self.resolved:
             for child in self.children:
                 child.disabled = True
@@ -232,9 +237,16 @@ class DowntimeView(ui.View):
         started_at = None
         if record.started_at:
             try:
-                started_at = datetime.fromisoformat(record.started_at)
+                parsed = datetime.fromisoformat(record.started_at)
             except ValueError:
                 started_at = None
+            else:
+                # A value with no UTC offset parses fine but yields a naive
+                # datetime; the restore button later subtracts it from an
+                # aware datetime.now(timezone.utc), which raises TypeError.
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                started_at = parsed
         return cls(
             service=record.service,
             author_id=record.author_id,

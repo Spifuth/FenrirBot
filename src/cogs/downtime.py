@@ -377,6 +377,18 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             embed=embed
         )
 
+        # The service is back up: drop any still-open incident record for it
+        # so a future restart doesn't revive enabled buttons on a closed
+        # announcement (a late click would post a fabricated duration). A
+        # store failure here must never break the announcement, which has
+        # already been sent.
+        try:
+            removed = incident_store.remove_by_service(service)
+            if removed:
+                print(f"[Downtime] Pruned {removed} closed incident record(s) for {service}")
+        except Exception as e:
+            print(f"[Downtime] Could not prune incident store for {service}: {e!r}")
+
         response = f"✅ Annonce de restauration envoyée pour **{service}** ({service_type.label})"
         await interaction.response.send_message(response, ephemeral=True)
 

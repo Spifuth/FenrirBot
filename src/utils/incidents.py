@@ -37,7 +37,13 @@ class IncidentStore:
             return {}
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (ValueError, OSError):
+            # ValueError covers both json.JSONDecodeError and the
+            # UnicodeDecodeError raised by read_text() on invalid UTF-8.
+            return {}
+        if not isinstance(raw, dict):
+            # A file containing e.g. `[]` or `null` decodes fine but has no
+            # .items() -- treat any non-mapping shape as "no incidents".
             return {}
         out: dict[int, IncidentRecord] = {}
         for key, value in raw.items():
@@ -65,6 +71,23 @@ class IncidentStore:
         data = self.load()
         if data.pop(message_id, None) is not None:
             self._write(data)
+
+    def remove_by_service(self, service: str) -> int:
+        """Delete every record whose service matches (case-insensitively).
+
+        Used when a service is announced restored via /up, so a closed
+        incident's buttons don't get revived with a fabricated duration on
+        the next restart. Returns the number of records removed.
+        """
+        data = self.load()
+        target = service.lower()
+        matching = [mid for mid, rec in data.items() if rec.service.lower() == target]
+        if not matching:
+            return 0
+        for mid in matching:
+            del data[mid]
+        self._write(data)
+        return len(matching)
 
 
 incident_store = IncidentStore()
