@@ -131,3 +131,59 @@ def test_diff_channels_reports_a_match_as_unchanged():
 
     assert diff.to_edit == []
     assert len(diff.unchanged) == 1
+
+
+@dataclass
+class FakeVoiceChannelLike:
+    """A channel with no `topic`/`slowmode_delay` — like discord.VoiceChannel."""
+    name: str
+    user_limit: int = 0
+
+
+def test_diff_channels_ignores_topic_on_a_channel_that_has_none():
+    # apply_channels guards its topic edit with hasattr(existing, "topic"), so a
+    # voice channel carrying an explicit spec topic is a no-op there. The diff
+    # must not promise an edit the applier will silently skip.
+    live = FakeCategoryChannel(name="Vocal", channels=[FakeVoiceChannelLike(name="general")])
+    guild = FakeGuildWithCats(categories=[live])
+    cat = CategorySpec(id="c1", name="Vocal", channels=[
+        ChannelSpec(id="ch1", name="general", type="voice", topic="ignored by the applier")
+    ])
+
+    diff = diff_channels(guild, [cat])
+
+    assert diff.to_edit == []
+    assert len(diff.unchanged) == 1
+
+
+def test_diff_channels_ignores_slowmode_on_a_channel_that_has_none():
+    live = FakeCategoryChannel(name="Vocal", channels=[FakeVoiceChannelLike(name="general")])
+    guild = FakeGuildWithCats(categories=[live])
+    cat = CategorySpec(id="c1", name="Vocal", channels=[
+        ChannelSpec(id="ch1", name="general", type="voice", slowmode_delay=30)
+    ])
+
+    diff = diff_channels(guild, [cat])
+
+    assert diff.to_edit == []
+
+
+def test_diff_channels_ignores_user_limit_on_a_non_voice_channel():
+    # apply_channels gates user_limit on isinstance(existing, discord.VoiceChannel);
+    # a text channel that happens to expose user_limit must not be reported.
+    @dataclass
+    class TextChannelWithUserLimit:
+        name: str
+        topic: str = ""
+        slowmode_delay: int = 0
+        user_limit: int = 99
+
+    live = FakeCategoryChannel(name="General", channels=[TextChannelWithUserLimit(name="main")])
+    guild = FakeGuildWithCats(categories=[live])
+    cat = CategorySpec(id="c1", name="General", channels=[
+        ChannelSpec(id="ch1", name="main", user_limit=0)
+    ])
+
+    diff = diff_channels(guild, [cat])
+
+    assert diff.to_edit == []

@@ -106,12 +106,15 @@ def diff_channels(guild: Any, categories: list[CategorySpec]) -> ChannelDiff:
                 continue
             # Mirror exactly what apply_channels reconciles, so the diff cannot
             # report "unchanged" for something apply will edit.
+            # Each condition below must match apply_channels' kwargs test exactly,
+            # including its attribute guards — a diff that reports an edit the
+            # applier will skip lies just as badly as one that misses an edit.
             changed = False
-            if ch_spec.topic is not None and getattr(existing, "topic", None) != ch_spec.topic:
+            if hasattr(existing, "topic") and ch_spec.topic is not None and existing.topic != ch_spec.topic:
                 changed = True
-            if getattr(existing, "slowmode_delay", 0) != ch_spec.slowmode_delay:
+            if hasattr(existing, "slowmode_delay") and existing.slowmode_delay != ch_spec.slowmode_delay:
                 changed = True
-            if hasattr(existing, "user_limit") and existing.user_limit != ch_spec.user_limit:
+            if isinstance(existing, discord.VoiceChannel) and existing.user_limit != ch_spec.user_limit:
                 changed = True
             if changed:
                 result.to_edit.append((cat_spec, ch_spec))
