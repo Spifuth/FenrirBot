@@ -1,7 +1,5 @@
 import asyncio
 
-import pytest
-
 from src.utils.grafana import GrafanaClient
 
 
