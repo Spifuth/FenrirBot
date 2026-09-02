@@ -166,7 +166,17 @@ class ServerConfigCog(commands.Cog, name="ServerConfig"):
         await apply_webhooks(ctx, state=state, invoker=interaction.user)
 
         if not dry_run:
-            save_state(state)
+            # Discord has already been mutated at this point. If the state file
+            # cannot be written the webhook/reaction-role bindings are lost, so
+            # say so in the report rather than raising and showing nothing.
+            try:
+                save_state(state)
+            except OSError as e:
+                summary.errors.append(
+                    f"state file could not be saved ({e}) — webhook and "
+                    "reaction-role bindings were NOT recorded; re-run /apply once "
+                    "the data directory is writable"
+                )
 
         await interaction.followup.send(
             embed=render_embed(summary, dry_run=dry_run),

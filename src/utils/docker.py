@@ -133,7 +133,16 @@ class DockerManager:
             containers=containers,
             last_updated=datetime.now().isoformat()
         )
-        self._save_cache()
+        # Persistence is a nicety; the in-memory cache is what the cogs read.
+        # This call is reached from a tasks.loop's before_loop, so letting it
+        # raise would stop the loop from ever starting and leave /containers,
+        # /stacks, /dashboard and every autocomplete silently empty. A
+        # read-only /app/data (a bind mount whose ownership was not updated
+        # for the non-root user) is exactly how that happens.
+        try:
+            self._save_cache()
+        except OSError as e:
+            print(f"⚠️ Could not persist the container cache: {e!r}")
         return containers
 
     async def refresh_async(self) -> list[ContainerInfo]:

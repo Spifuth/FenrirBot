@@ -101,3 +101,21 @@ def test_refresh_keeps_going_when_one_container_vanishes(tmp_path):
     out = mgr.refresh()
     assert [c.name for c in out] == ["traefik"]
     assert mgr.cache is not None, "a single bad container must not abandon the whole refresh"
+
+
+def test_refresh_survives_an_unwritable_data_dir(tmp_path):
+    # A bind mount whose ownership was not updated for the non-root user is
+    # read-only to the bot. refresh() is reached from a tasks.loop before_loop,
+    # so raising here would stop the loop from ever starting and leave every
+    # container command silently empty.
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    ro.chmod(0o555)
+    mgr = _manager(tmp_path, [FakeSparseContainer("traefik", "traefik:v3", "running", "core")])
+    mgr._data_file = ro / "containers.json"
+
+    out = mgr.refresh()
+
+    assert [c.name for c in out] == ["traefik"]
+    assert mgr.cache is not None, "the in-memory cache must still be usable"
+    assert mgr.get_stacks() == ["core"]
