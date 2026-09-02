@@ -1,11 +1,14 @@
 """Fenrir Bot - Main bot class and initialization"""
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from typing import Optional
 
 from .config import config
 from .utils.webhook_server import WebhookServer
+from .utils.incidents import incident_store
+from .utils.views import DowntimeView
 
 
 class FenrirBot(commands.Bot):
@@ -52,11 +55,49 @@ class FenrirBot(commands.Bot):
             except Exception as e:
                 print(f"  ❌ Failed to load {cog}: {e}")
 
+        self.tree.on_error = self.on_app_command_error
+
         try:
             synced = await self.tree.sync()
             print(f"  ✅ Synced {len(synced)} slash command(s)")
         except Exception as e:
             print(f"  ❌ Failed to sync commands: {e}")
+
+        # Revive the buttons on any incident that was still open at shutdown.
+        # load() already tolerates a corrupt/malformed store file, but an
+        # unforeseen failure here must still degrade to "no incidents
+        # revived" rather than aborting startup entirely.
+        try:
+            records = list(incident_store.load().values())
+        except Exception as e:
+            print(f"  ⚠️ Could not load incident store: {e!r}")
+            records = []
+
+        revived = 0
+        for record in records:
+            try:
+                self.add_view(DowntimeView.from_record(record, incident_store),
+                              message_id=record.message_id)
+                revived += 1
+            except Exception as e:
+                print(f"  ⚠️ Could not revive incident {record.message_id}: {e!r}")
+        if revived:
+            print(f"  ✅ Revived {revived} open incident view(s)")
+
+    async def on_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ):
+        """Give a denied user a clear answer instead of a silent failure."""
+        if isinstance(error, app_commands.MissingPermissions):
+            message = "⛔ Cette commande est réservée aux administrateurs."
+        else:
+            print(f"⚠️ Command error in /{interaction.command.name if interaction.command else '?'}: {error!r}")
+            message = "❌ Une erreur est survenue lors de l'exécution de cette commande."
+
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
 
     async def on_ready(self):
         """Called when the bot is fully connected and ready"""

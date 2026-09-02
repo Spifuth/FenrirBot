@@ -117,8 +117,7 @@ def _build_overwrites(
     for ow in overwrites:
         target = ctx.resolver.resolve_target(ow.target)
         if target is None:
-            if not ctx.dry_run:
-                ctx.err(f"overwrite target not found: {ow.target}")
+            ctx.err(f"overwrite target not found: {ow.target}")
             continue
         out[target] = to_permission_overwrite(allow=ow.allow, deny=ow.deny)
     return out
@@ -149,12 +148,19 @@ async def apply_categories(ctx: ApplyContext) -> None:
         else:
             ctx.resolver.register_category(spec.id, existing)
             needs_edit = existing.position != spec.position
+            # NEVER pass an empty dict: discord.py guards on `is not None`, so {}
+            # serialises to permission_overwrites: [] and deletes every overwrite.
+            # An empty dict here also means "a target failed to resolve", which is
+            # exactly when wiping the live config is most destructive.
+            can_set_overwrites = bool(overwrites)
             if needs_edit:
                 ctx.log(f"~ category: {spec.name} (position)")
                 if not ctx.dry_run:
+                    kwargs = {"position": spec.position, "reason": "server_config apply"}
+                    if can_set_overwrites:
+                        kwargs["overwrites"] = overwrites
                     try:
-                        await existing.edit(position=spec.position, overwrites=overwrites,
-                                            reason="server_config apply")
+                        await existing.edit(**kwargs)
                         ctx.summary.categories_edited += 1
                     except discord.Forbidden as e:
                         ctx.err(f"category edit forbidden: {spec.name} ({e})")
@@ -163,12 +169,14 @@ async def apply_categories(ctx: ApplyContext) -> None:
                 else:
                     ctx.summary.categories_edited += 1
             else:
-                # Still reconcile overwrites silently if they drifted
-                if not ctx.dry_run:
+                # Still reconcile overwrites if they drifted — but only real ones.
+                if not ctx.dry_run and can_set_overwrites:
                     try:
                         await existing.edit(overwrites=overwrites, reason="server_config apply")
-                    except (discord.Forbidden, discord.HTTPException):
-                        pass
+                    except (discord.Forbidden, discord.HTTPException) as e:
+                        # Was a bare `pass` — a silent failure in the one place the
+                        # report claims nothing happened.
+                        ctx.err(f"category overwrite reconcile failed: {spec.name} ({e})")
                 ctx.summary.categories_unchanged += 1
 
 

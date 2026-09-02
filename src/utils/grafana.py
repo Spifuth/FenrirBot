@@ -13,12 +13,14 @@ class GrafanaClient:
             "Content-Type": "application/json",
         }
 
-    async def get_active_alerts(self) -> list[dict]:
+    async def get_active_alerts(self) -> list[dict] | None:
         """
         Fetch currently firing alerts from Grafana Alertmanager.
 
-        Returns a list of alert dicts (Alertmanager v2 format), empty list on error.
-        Each dict has keys: labels, annotations, startsAt, updatedAt, status, generatorURL
+        Returns the alert list on success (possibly empty), or **None** if the
+        result could not be determined — a dead API or a rejected token must
+        never render as "no alerts", which is an all-clear the caller cannot
+        distinguish from a real one.
         """
         url = f"{self.base_url}/api/alertmanager/grafana/api/v2/alerts"
         params = {"active": "true", "silenced": "false", "inhibited": "false"}
@@ -26,10 +28,12 @@ class GrafanaClient:
             async with aiohttp.ClientSession(headers=self._headers) as session:
                 async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
-                        return []
+                        print(f"⚠️ Grafana returned {resp.status} for {url}")
+                        return None
                     return await resp.json()
-        except Exception:
-            return []
+        except Exception as e:
+            print(f"⚠️ Grafana unreachable: {e!r}")
+            return None
 
     async def health_check(self) -> bool:
         """Returns True if Grafana API is reachable and authenticated."""

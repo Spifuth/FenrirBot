@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from ..config import config
 from ..utils.grafana import GrafanaClient
+from ..utils.permissions import admin_only
 
 
 _SEV_WIDTH = 8  # len("CRITICAL") — all labels padded to this so · aligns
@@ -68,6 +69,7 @@ class AlertsCog(commands.Cog, name="Alerts"):
         )
 
     @app_commands.command(name="alerts", description="🚨 Afficher les alertes Grafana actives")
+    @admin_only()
     async def alerts_slash(self, interaction: discord.Interaction):
         if not self.grafana:
             await interaction.response.send_message(
@@ -79,6 +81,20 @@ class AlertsCog(commands.Cog, name="Alerts"):
         await interaction.response.defer()
 
         alerts = await self.grafana.get_active_alerts()
+
+        if alerts is None:
+            embed = discord.Embed(
+                title="Statut inconnu",
+                description=(
+                    "Impossible de joindre Grafana — ce n'est **pas** un tout-va-bien. "
+                    "Vérifie `GRAFANA_URL` / `GRAFANA_API_KEY` et que le conteneur répond."
+                ),
+                color=0x2C2F33,
+                timestamp=datetime.now(timezone.utc),
+            )
+            embed.set_footer(text="Fenrir · Grafana injoignable")
+            await interaction.followup.send(embed=embed)
+            return
 
         if not alerts:
             embed = discord.Embed(

@@ -12,7 +12,14 @@ from ..config import config
 from ..utils.embeds import DowntimeEmbed, ServiceType, MaintenanceType
 from ..utils.docker import docker_manager
 from ..utils.views import DowntimeView
-from ..utils.helpers import get_announcement_channel, get_notification_mention
+from ..utils.incidents import IncidentRecord, incident_store
+from ..utils.permissions import admin_only
+from ..utils.helpers import (
+    get_announcement_channel,
+    get_notification_mention,
+    parse_local_datetime,
+    format_paris,
+)
 
 @dataclass
 class ScheduledMaintenance:
@@ -112,7 +119,16 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             if now >= maintenance.scheduled_time:
                 # Check if it's a catchup (more than 5 minutes late)
                 is_catchup = (now - maintenance.scheduled_time).total_seconds() > 300
-                await self._trigger_scheduled_downtime(maintenance, is_catchup=is_catchup)
+                try:
+                    sent = await self._trigger_scheduled_downtime(maintenance, is_catchup=is_catchup)
+                except Exception as e:
+                    # One bad entry must never end the loop — tasks.loop stops on an
+                    # unhandled exception, which would silence every future maintenance.
+                    print(f"[Downtime] Trigger failed for {maintenance.service}: {e!r}")
+                    continue
+                if not sent:
+                    # Keep it queued rather than deleting it unannounced.
+                    continue
                 maintenance.announced = True
                 triggered_any = True
         
@@ -140,8 +156,13 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         if missed:
             print(f"[Downtime] Found {len(missed)} missed maintenance(s), triggering catchup...")
             for maintenance in missed:
-                await self._trigger_scheduled_downtime(maintenance, is_catchup=True)
-                maintenance.announced = True
+                try:
+                    sent = await self._trigger_scheduled_downtime(maintenance, is_catchup=True)
+                except Exception as e:
+                    print(f"[Downtime] Catchup failed for {maintenance.service}: {e!r}")
+                    continue
+                if sent:
+                    maintenance.announced = True
             
             # Clean up and save
             self._scheduled_maintenances = [
@@ -150,14 +171,30 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             ]
             self._save_scheduled_maintenances()
     
-    async def _trigger_scheduled_downtime(self, maintenance: ScheduledMaintenance, is_catchup: bool = False):
-        """Trigger the downtime announcement for a scheduled maintenance"""
+    async def _trigger_scheduled_downtime(
+        self, maintenance: ScheduledMaintenance, is_catchup: bool = False
+    ) -> bool:
+        """Announce a scheduled maintenance. Returns True only if it was sent."""
         channel = self.bot.get_channel(maintenance.channel_id)
-        if not channel:
-            return
-        
+        # TextChannel or Thread: /scheduled captures interaction.channel.id with
+        # no type check, so a maintenance scheduled from inside a thread stores a
+        # thread id. Thread.send() works fine; only the incident-thread creation
+        # below doesn't apply there, and that's already best-effort.
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            print(
+                f"[Downtime] Channel {maintenance.channel_id} unavailable for "
+                f"{maintenance.service}; leaving it queued"
+            )
+            return False
+
+        # get_user only reads the cache; fall back to the API, and tolerate a
+        # user who has left. The embed renders "inconnu" rather than crashing.
         author = self.bot.get_user(maintenance.author_id)
-        assert author is not None
+        if author is None:
+            try:
+                author = await self.bot.fetch_user(maintenance.author_id)
+            except discord.HTTPException:
+                author = None
         service_type = self._get_service_type(maintenance.service)
 
         try:
@@ -200,28 +237,46 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             view=view
         )
         view.message = msg
-        
-        # Create incident thread
-        thread = await msg.create_thread(
-            name=f"{maint_type.icon} {maintenance.service} - {maint_type.label}",
-            auto_archive_duration=1440
-        )
-        
-        catchup_note = ""
-        if is_catchup:
-            catchup_note = f"\n⚠️ **Note:** This maintenance was triggered late because the bot was offline.\n"
 
-        await thread.send(
-            f"📋 **Scheduled Maintenance Thread** for **{maintenance.service}**\n\n"
-            f"⏰ This maintenance was scheduled and has now started automatically.\n"
-            f"📝 Reason: {maintenance.reason}\n"
-            f"⏱️ Expected duration: {maintenance.duration}"
-            f"{catchup_note}"
-        )
-        view.incident_thread = thread
-        
+        try:
+            incident_store.add(IncidentRecord(
+                message_id=msg.id,
+                channel_id=channel.id,
+                service=maintenance.service,
+                author_id=maintenance.author_id,
+                duration_str=maintenance.duration,
+                service_type=service_type.value,
+                maintenance_type=maint_type.value,
+                started_at=datetime.now(timezone.utc).isoformat(),
+            ))
+        except Exception as e:
+            print(f"[Downtime] Could not persist incident {msg.id}: {e!r}")
+
+        # The announcement is public from here: the role has been pinged. A
+        # failure below must never bubble up, because the caller would leave
+        # the entry unannounced and the 30s loop would re-ping every tick.
+        try:
+            thread = await msg.create_thread(
+                name=f"{maint_type.icon} {maintenance.service} - {maint_type.label}",
+                auto_archive_duration=1440
+            )
+            catchup_note = ""
+            if is_catchup:
+                catchup_note = f"\n⚠️ **Note:** This maintenance was triggered late because the bot was offline.\n"
+            await thread.send(
+                f"📋 **Scheduled Maintenance Thread** for **{maintenance.service}**\n\n"
+                f"⏰ This maintenance was scheduled and has now started automatically.\n"
+                f"📝 Reason: {maintenance.reason}\n"
+                f"⏱️ Expected duration: {maintenance.duration}"
+                f"{catchup_note}"
+            )
+            view.incident_thread = thread
+        except Exception as e:
+            print(f"[Downtime] Incident thread failed for {maintenance.service}: {e!r}")
+
         await view.start_timer()
-    
+        return True
+
     def _refresh_service_cache(self):
         """Refresh the cached lists of containers and stacks"""
         self._containers_cache = set(docker_manager.get_container_names(include_stopped=True))
@@ -306,6 +361,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
     # ========== Slash Commands ==========
 
     @app_commands.command(name="up", description="🟢 Annoncer la restauration d'un service")
+    @admin_only()
     @app_commands.describe(
         service="Nom du service rétabli",
         mention="Mentionner le rôle de notification (défaut: Non)"
@@ -323,10 +379,23 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             embed=embed
         )
 
+        # The service is back up: drop any still-open incident record for it
+        # so a future restart doesn't revive enabled buttons on a closed
+        # announcement (a late click would post a fabricated duration). A
+        # store failure here must never break the announcement, which has
+        # already been sent.
+        try:
+            removed = incident_store.remove_by_service(service)
+            if removed:
+                print(f"[Downtime] Pruned {removed} closed incident record(s) for {service}")
+        except Exception as e:
+            print(f"[Downtime] Could not prune incident store for {service}: {e!r}")
+
         response = f"✅ Annonce de restauration envoyée pour **{service}** ({service_type.label})"
         await interaction.response.send_message(response, ephemeral=True)
 
     @app_commands.command(name="maintenance", description="🔧 Annoncer une maintenance (màj, backup, config, etc.)")
+    @admin_only()
     @app_commands.describe(
         service="Nom du service",
         maintenance_type="Type de maintenance",
@@ -401,6 +470,20 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
         view.message = msg
 
+        try:
+            incident_store.add(IncidentRecord(
+                message_id=msg.id,
+                channel_id=channel.id,
+                service=service,
+                author_id=interaction.user.id,
+                duration_str=duration,
+                service_type=svc_type.value,
+                maintenance_type=maint_type.value,
+                started_at=datetime.now(timezone.utc).isoformat(),
+            ))
+        except Exception as e:
+            print(f"[Downtime] Could not persist incident {msg.id}: {e!r}")
+
         # Create thread for updates
         thread = await msg.create_thread(
             name=f"{maint_type.icon} {service} - {maint_type.label}",
@@ -429,6 +512,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
 
     @app_commands.command(name="scheduled", description="📅 Planifier une maintenance future")
+    @admin_only()
     @app_commands.describe(
         service="Nom du service",
         when="Date/heure (format: YYYY-MM-DD HH:MM, ex: '2026-01-15 22:00')",
@@ -460,7 +544,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         """Announce scheduled maintenance via slash command with auto-trigger"""
         # Parse the datetime
         try:
-            scheduled_time = datetime.strptime(when, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+            scheduled_time = parse_local_datetime(when)
         except ValueError:
             await interaction.response.send_message(
                 "❌ Format de date invalide ! Utilisez: `YYYY-MM-DD HH:MM`\n"
@@ -487,7 +571,8 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             maint_type = MaintenanceType.DOWNTIME
         
         # Format the time nicely for display
-        when_display = scheduled_time.strftime("%A %d %B %Y à %H:%M")
+        # scheduled_time is UTC; the user typed Paris local, so render it back in Paris
+        when_display = format_paris(scheduled_time, "%A %d %B %Y à %H:%M")
         embed = DowntimeEmbed.scheduled(
             service, when_display, duration, reason, 
             interaction.user, service_type, maint_type
@@ -529,6 +614,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
     
     @app_commands.command(name="scheduled-list", description="📋 Lister les maintenances planifiées")
+    @admin_only()
     async def scheduled_list_slash(self, interaction: discord.Interaction):
         """List all pending scheduled maintenances"""
         if not self._scheduled_maintenances:
@@ -566,6 +652,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="scheduled-cancel", description="❌ Annuler une maintenance planifiée")
+    @admin_only()
     @app_commands.describe(service="Nom du service dont la maintenance doit être annulée")
     @app_commands.autocomplete(service=service_autocomplete)
     async def scheduled_cancel_slash(self, interaction: discord.Interaction, service: str):

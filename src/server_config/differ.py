@@ -100,9 +100,24 @@ def diff_channels(guild: Any, categories: list[CategorySpec]) -> ChannelDiff:
         existing_children = list(getattr(parent, "channels", [])) if parent else []
         existing_by_name = {c.name: c for c in existing_children}
         for ch_spec in cat_spec.channels:
-            if ch_spec.name not in existing_by_name:
+            existing = existing_by_name.get(ch_spec.name)
+            if existing is None:
                 result.to_create.append((cat_spec, ch_spec))
+                continue
+            # Mirror exactly what apply_channels reconciles, so the diff cannot
+            # report "unchanged" for something apply will edit.
+            # Each condition below must match apply_channels' kwargs test exactly,
+            # including its attribute guards — a diff that reports an edit the
+            # applier will skip lies just as badly as one that misses an edit.
+            changed = False
+            if hasattr(existing, "topic") and ch_spec.topic is not None and existing.topic != ch_spec.topic:
+                changed = True
+            if hasattr(existing, "slowmode_delay") and existing.slowmode_delay != ch_spec.slowmode_delay:
+                changed = True
+            if isinstance(existing, discord.VoiceChannel) and existing.user_limit != ch_spec.user_limit:
+                changed = True
+            if changed:
+                result.to_edit.append((cat_spec, ch_spec))
             else:
-                # Conservative: report as unchanged here; the applier will reconcile topic/slowmode.
                 result.unchanged.append((cat_spec, ch_spec))
     return result

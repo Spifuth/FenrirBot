@@ -1,5 +1,6 @@
 """Docker container discovery and caching"""
 
+import asyncio
 import json
 from pathlib import Path
 from dataclasses import dataclass, asdict
@@ -24,6 +25,7 @@ class ContainerInfo:
     image: str
     status: str
     state: str  # running, exited, paused, etc.
+    stack: str = ""  # com.docker.compose.project label, "" if not composed
 
     @property
     def display_name(self) -> str:
@@ -55,6 +57,7 @@ class DockerManager:
     def __init__(self):
         self.cache: Optional[ContainerCache] = None
         self._client: Optional["docker.DockerClient"] = None
+        self._data_file = DATA_FILE
         self._load_cache()
 
     def _get_client(self) -> Optional["docker.DockerClient"]:
@@ -72,86 +75,96 @@ class DockerManager:
 
     def _load_cache(self):
         """Load cached container data from file"""
-        if DATA_FILE.exists():
+        if self._data_file.exists():
             try:
-                with open(DATA_FILE, "r") as f:
+                with open(self._data_file, "r") as f:
                     data = json.load(f)
                     self.cache = ContainerCache.from_dict(data)
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError, TypeError):
                 self.cache = None
 
     def _save_cache(self):
-        """Save container data to cache file"""
-        if self.cache:
-            DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(DATA_FILE, "w") as f:
-                json.dump(self.cache.to_dict(), f, indent=2)
+        """Save container data to cache file (atomic: write temp, then replace)"""
+        if not self.cache:
+            return
+        self._data_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._data_file.with_suffix(".json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(self.cache.to_dict(), f, indent=2)
+        tmp.replace(self._data_file)
 
     def refresh(self) -> list[ContainerInfo]:
-        """Refresh container list from Docker daemon"""
+        """Refresh container list from the Docker daemon.
+
+        Uses sparse=True: one API call instead of 1+N inspects, and immune to a
+        container being removed mid-iteration. Sparse objects do NOT populate
+        `.name` (returns None) or `.labels` (raises), so read `.attrs` directly.
+        """
         client = self._get_client()
         if client is None:
             return []
 
-        containers = []
         try:
-            for c in client.containers.list(all=True):
-                image_name = (
-                    c.image.tags[0] if c.image.tags
-                    else c.attrs.get("Config", {}).get("Image", c.image.short_id)
-                )
-                containers.append(ContainerInfo(
-                    id=c.short_id,
-                    name=c.name,
-                    image=image_name,
-                    status=c.status,
-                    state=c.attrs["State"]["Status"],
-                ))
-
-            self.cache = ContainerCache(
-                containers=containers,
-                last_updated=datetime.now().isoformat()
-            )
-            self._save_cache()
-
+            raw = client.containers.list(all=True, sparse=True)
         except Exception as e:
             print(f"⚠️ Docker refresh failed: {e}")
+            return []
 
+        containers = []
+        for c in raw:
+            try:
+                attrs = c.attrs
+                names = attrs.get("Names") or []
+                name = names[0].lstrip("/") if names else attrs.get("Id", "")[:12]
+                containers.append(ContainerInfo(
+                    id=c.short_id,
+                    name=name,
+                    image=attrs.get("Image", ""),
+                    status=attrs.get("Status", ""),
+                    state=attrs.get("State", ""),
+                    stack=(attrs.get("Labels") or {}).get("com.docker.compose.project", ""),
+                ))
+            except Exception as e:
+                # One malformed or vanished entry must not abandon the whole refresh.
+                print(f"⚠️ Skipping a container during refresh: {e!r}")
+                continue
+
+        self.cache = ContainerCache(
+            containers=containers,
+            last_updated=datetime.now().isoformat()
+        )
+        # Persistence is a nicety; the in-memory cache is what the cogs read.
+        # This call is reached from a tasks.loop's before_loop, so letting it
+        # raise would stop the loop from ever starting and leave /containers,
+        # /stacks, /dashboard and every autocomplete silently empty. A
+        # read-only /app/data (a bind mount whose ownership was not updated
+        # for the non-root user) is exactly how that happens.
+        try:
+            self._save_cache()
+        except OSError as e:
+            print(f"⚠️ Could not persist the container cache: {e!r}")
         return containers
 
-    def get_containers(self, include_stopped: bool = True) -> list[ContainerInfo]:
-        """Get list of containers (from cache or refresh)"""
-        if not self.cache:
-            self.refresh()
+    async def refresh_async(self) -> list[ContainerInfo]:
+        """Run the blocking refresh off the event loop."""
+        return await asyncio.to_thread(self.refresh)
 
+    def get_containers(self, include_stopped: bool = True) -> list[ContainerInfo]:
+        """Get list of containers from cache. Never blocks; never calls the API."""
         if not self.cache:
             return []
 
         if include_stopped:
             return self.cache.containers
-        else:
-            return [c for c in self.cache.containers if c.state == "running"]
+        return [c for c in self.cache.containers if c.state == "running"]
 
     def get_container_names(self, include_stopped: bool = True) -> list[str]:
         """Get list of container names for autocomplete"""
         return [c.display_name for c in self.get_containers(include_stopped)]
 
     def get_stacks(self) -> list[str]:
-        """Get unique Docker Compose stack names (from container labels)"""
-        client = self._get_client()
-        if client is None:
-            return []
-
-        stacks = set()
-        try:
-            for c in client.containers.list(all=True):
-                stack = c.labels.get("com.docker.compose.project")
-                if stack:
-                    stacks.add(stack)
-        except Exception as e:
-            print(f"⚠️ Docker stacks fetch failed: {e}")
-
-        return sorted(stacks)
+        """Unique Compose stack names, read from the cache. No API call."""
+        return sorted({c.stack for c in self.get_containers(True) if c.stack})
 
 
 # Global instance

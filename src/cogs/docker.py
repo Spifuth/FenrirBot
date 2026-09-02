@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from ..utils.docker import docker_manager
+from ..utils.permissions import admin_only
 
 
 class DockerCog(commands.Cog, name="Docker"):
@@ -20,13 +21,13 @@ class DockerCog(commands.Cog, name="Docker"):
     @tasks.loop(minutes=5)
     async def auto_refresh(self):
         """Auto-refresh container list every 5 minutes"""
-        docker_manager.refresh()
-    
+        await docker_manager.refresh_async()
+
     @auto_refresh.before_loop
     async def before_auto_refresh(self):
         await self.bot.wait_until_ready()
         # Initial refresh on startup
-        docker_manager.refresh()
+        await docker_manager.refresh_async()
 
     # ========== Autocomplete Functions ==========
     
@@ -67,6 +68,7 @@ class DockerCog(commands.Cog, name="Docker"):
     # ========== Commands ==========
     
     @app_commands.command(name="containers", description="🐳 Lister tous les containers Docker")
+    @admin_only()
     async def containers_slash(self, interaction: discord.Interaction):
         """List all Docker containers"""
         containers = docker_manager.get_containers()
@@ -106,6 +108,7 @@ class DockerCog(commands.Cog, name="Docker"):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="stacks", description="📦 Lister tous les stacks Docker Compose")
+    @admin_only()
     async def stacks_slash(self, interaction: discord.Interaction):
         """List all Docker Compose stacks"""
         stacks = docker_manager.get_stacks()
@@ -127,11 +130,12 @@ class DockerCog(commands.Cog, name="Docker"):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="refresh", description="🔄 Rafraîchir la liste des containers")
+    @admin_only()
     async def refresh_slash(self, interaction: discord.Interaction):
         """Manually refresh the container list"""
         await interaction.response.defer(ephemeral=True)
         
-        containers = docker_manager.refresh()
+        containers = await docker_manager.refresh_async()
         stacks = docker_manager.get_stacks()
         
         await interaction.followup.send(

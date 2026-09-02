@@ -210,5 +210,6 @@ __marimo__/
 data/containers.json
 data/server_stats.json
 data/server_config_state.json
+data/open_incidents.json
 
 .worktrees/

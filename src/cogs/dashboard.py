@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from ..utils.docker import docker_manager
 from ..utils.embeds import DashboardEmbed
+from ..utils.permissions import admin_only
 
 
 class DashboardCog(commands.Cog, name="Dashboard"):
@@ -15,6 +16,7 @@ class DashboardCog(commands.Cog, name="Dashboard"):
         self.bot = bot
 
     @app_commands.command(name="dashboard", description="📊 Afficher le tableau de bord des services")
+    @admin_only()
     async def dashboard_slash(self, interaction: discord.Interaction):
         """Display a comprehensive status dashboard"""
         await interaction.response.defer()

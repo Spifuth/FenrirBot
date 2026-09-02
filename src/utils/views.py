@@ -2,11 +2,12 @@
 
 import discord
 from discord import ui
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 import re
 
 from .embeds import DowntimeEmbed, MaintenanceType, ServiceType
+from .incidents import IncidentRecord, IncidentStore, incident_store
 
 
 def parse_duration(duration_str: str) -> timedelta | None:
@@ -45,8 +46,13 @@ class DowntimeView(ui.View):
         notification_mention: str | None = "@here",
         service_type: ServiceType = ServiceType.OTHER,
         maintenance_type: MaintenanceType = MaintenanceType.DOWNTIME,
+        store: IncidentStore | None = None,
+        started_at: datetime | None = None,
     ):
-        super().__init__(timeout=86400)
+        # timeout=None + stable custom_ids => discord.py treats this as a
+        # persistent view, so bot.add_view() can revive it after a restart.
+        super().__init__(timeout=None)
+        self.store = store or incident_store
         self.service = service
         self.author_id = author_id
         self.duration_str = duration_str
@@ -69,7 +75,7 @@ class DowntimeView(ui.View):
         self.incident_thread: discord.Thread | None = None
 
         self.duration = parse_duration(duration_str)
-        self.start_time = datetime.now()
+        self.start_time = started_at if started_at is not None else datetime.now(timezone.utc)
 
     async def start_timer(self):
         """Start a background timer that reminds when duration is up"""
@@ -94,7 +100,8 @@ class DowntimeView(ui.View):
 
         self.timer_task = asyncio.create_task(timer_callback())
 
-    @ui.button(label="✅ Service Restored", style=discord.ButtonStyle.green)
+    @ui.button(label="✅ Service Restored", style=discord.ButtonStyle.green,
+               custom_id="fenrir:incident:restore")
     async def restore_button(self, interaction: discord.Interaction, button: ui.Button):
         """Button to mark service as restored"""
         if interaction.user.id != self.author_id:
@@ -104,12 +111,15 @@ class DowntimeView(ui.View):
             )
             return
 
+        # Four REST calls follow; Discord's initial-response deadline is 3s.
+        await interaction.response.defer(ephemeral=True)
+
         self.resolved = True
 
         if self.timer_task:
             self.timer_task.cancel()
 
-        actual_duration = datetime.now() - self.start_time
+        actual_duration = datetime.now(timezone.utc) - self.start_time
         hours, remainder = divmod(int(actual_duration.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
 
@@ -144,14 +154,18 @@ class DowntimeView(ui.View):
             )
             await self.incident_thread.edit(archived=True, locked=True)
 
-        await interaction.response.send_message(
+        if interaction.message is not None:
+            self.store.remove(interaction.message.id)
+
+        await interaction.followup.send(
             f"✅ **{self.service}** marked as restored!",
             ephemeral=True
         )
 
         self.stop()
 
-    @ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+    @ui.button(label="❌ Cancel", style=discord.ButtonStyle.red,
+               custom_id="fenrir:incident:cancel")
     async def cancel_button(self, interaction: discord.Interaction, button: ui.Button):
         """Button to cancel/dismiss the downtime (false alarm)"""
         if interaction.user.id != self.author_id:
@@ -160,6 +174,8 @@ class DowntimeView(ui.View):
                 ephemeral=True
             )
             return
+
+        await interaction.response.defer(ephemeral=True)
 
         self.resolved = True
 
@@ -175,7 +191,10 @@ class DowntimeView(ui.View):
             view=self
         )
 
-        await interaction.response.send_message(
+        if interaction.message is not None:
+            self.store.remove(interaction.message.id)
+
+        await interaction.followup.send(
             f"🚫 Downtime announcement for **{self.service}** has been cancelled.",
             ephemeral=True
         )
@@ -187,7 +206,12 @@ class DowntimeView(ui.View):
         self.stop()
 
     async def on_timeout(self):
-        """Called when the view times out (24h)"""
+        """Called when the view times out.
+
+        The view is constructed with timeout=None (persistent), so this
+        never fires in normal operation. Kept only in case something ever
+        constructs a DowntimeView with a non-None timeout.
+        """
         if self.message and not self.resolved:
             for child in self.children:
                 child.disabled = True
@@ -196,3 +220,39 @@ class DowntimeView(ui.View):
                 await self.message.edit(view=self)
             except discord.NotFound:
                 pass
+
+    @classmethod
+    def from_record(cls, record: IncidentRecord, store: IncidentStore) -> "DowntimeView":
+        """Rebuild a view from disk after a restart."""
+        try:
+            service_type = ServiceType(record.service_type)
+        except ValueError:
+            service_type = ServiceType.OTHER
+        try:
+            maintenance_type = MaintenanceType(record.maintenance_type)
+        except ValueError:
+            maintenance_type = MaintenanceType.DOWNTIME
+        # Fall back to "now" on a missing or unparseable timestamp rather
+        # than raising -- a bad/old record must still revive the buttons.
+        started_at = None
+        if record.started_at:
+            try:
+                parsed = datetime.fromisoformat(record.started_at)
+            except ValueError:
+                started_at = None
+            else:
+                # A value with no UTC offset parses fine but yields a naive
+                # datetime; the restore button later subtracts it from an
+                # aware datetime.now(timezone.utc), which raises TypeError.
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                started_at = parsed
+        return cls(
+            service=record.service,
+            author_id=record.author_id,
+            duration_str=record.duration_str,
+            service_type=service_type,
+            maintenance_type=maintenance_type,
+            store=store,
+            started_at=started_at,
+        )
