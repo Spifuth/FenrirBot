@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -81,9 +82,10 @@ def test_write_is_atomic_no_tmp_left_behind(store):
 
 
 def test_started_at_round_trips(store):
-    store.add(_record(started_at="2026-01-01T12:00:00+00:00"))
+    recent = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    store.add(_record(started_at=recent))
     reloaded = IncidentStore(path=store.path).load()
-    assert reloaded[111].started_at == "2026-01-01T12:00:00+00:00"
+    assert reloaded[111].started_at == recent
 
 
 def test_load_tolerates_a_record_json_without_started_at(store):
@@ -142,3 +144,33 @@ def test_remove_by_service_returns_zero_without_raising_when_nothing_matches(sto
 
 def test_remove_by_service_on_empty_store_returns_zero(store):
     assert store.remove_by_service("traefik") == 0
+
+
+def test_load_drops_a_record_older_than_the_ttl(store):
+    # A record left behind by an incident closed outside the buttons would
+    # otherwise be revived forever, with enabled buttons that report a
+    # fabricated multi-week duration when clicked.
+    old = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    store.add(_record(started_at=old))
+    assert store.load() == {}
+
+
+def test_load_keeps_a_record_inside_the_ttl(store):
+    fresh = (datetime.now(timezone.utc) - timedelta(days=6)).isoformat()
+    store.add(_record(started_at=fresh))
+    assert 111 in store.load()
+
+
+def test_load_keeps_a_record_with_no_started_at():
+    # Unknown age is not evidence of staleness — keep it rather than guess.
+    import tempfile, pathlib
+    s = IncidentStore(path=pathlib.Path(tempfile.mkdtemp()) / "open_incidents.json")
+    s.add(_record(started_at=""))
+    assert 111 in s.load()
+
+
+def test_load_keeps_a_record_with_a_malformed_started_at():
+    import tempfile, pathlib
+    s = IncidentStore(path=pathlib.Path(tempfile.mkdtemp()) / "open_incidents.json")
+    s.add(_record(started_at="not-a-date"))
+    assert 111 in s.load()

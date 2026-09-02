@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, asdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 STORE_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "open_incidents.json"
@@ -32,6 +33,23 @@ class IncidentStore:
     def __init__(self, path: Path = STORE_FILE):
         self.path = Path(path)
 
+    # An incident closed by any route other than the buttons or /up leaves its
+    # record behind. Without a ceiling the file grows forever and every restart
+    # re-registers enabled buttons on long-dead announcements, where a late
+    # click would report a fabricated multi-week duration.
+    MAX_AGE = timedelta(days=7)
+
+    def _is_stale(self, record: IncidentRecord, now: datetime) -> bool:
+        if not record.started_at:
+            return False  # unknown age: keep it rather than guess
+        try:
+            started = datetime.fromisoformat(record.started_at)
+        except ValueError:
+            return False
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        return (now - started) > self.MAX_AGE
+
     def load(self) -> dict[int, IncidentRecord]:
         if not self.path.exists():
             return {}
@@ -45,12 +63,16 @@ class IncidentStore:
             # A file containing e.g. `[]` or `null` decodes fine but has no
             # .items() -- treat any non-mapping shape as "no incidents".
             return {}
+        now = datetime.now(timezone.utc)
         out: dict[int, IncidentRecord] = {}
         for key, value in raw.items():
             try:
-                out[int(key)] = IncidentRecord(**value)
+                record = IncidentRecord(**value)
             except (TypeError, ValueError):
                 continue
+            if self._is_stale(record, now):
+                continue
+            out[int(key)] = record
         return out
 
     def _write(self, data: dict[int, IncidentRecord]) -> None:

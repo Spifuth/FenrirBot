@@ -92,3 +92,36 @@ def test_partial_overwrites_from_an_unresolved_role_do_not_apply():
     wiping = [c for c in existing.edit_calls if c.get("overwrites") == {}]
     assert wiping == [], "a role that failed to resolve must not strip the live overwrites"
     assert ctx.summary.errors, "the unresolved target must be reported"
+
+
+def test_position_changed_branch_also_refuses_an_empty_overwrites_dict():
+    # The other guarded branch: when the category's position differs, edit() is
+    # called with position= as well. An empty overwrites dict must still be
+    # omitted rather than wiping the live config.
+    existing = FakeCategory(name="General", position=3)
+    guild = FakeGuild(categories=[existing])
+    cat = CategorySpec(id="c1", name="General", position=0, overwrites=[], channels=[])
+    spec = _spec([cat])
+
+    asyncio.run(apply_categories(_ctx(guild, spec)))
+
+    assert existing.edit_calls, "the position change must still be applied"
+    assert all("overwrites" not in c for c in existing.edit_calls), \
+        "an empty overwrites dict deletes every overwrite on the category"
+    assert existing.edit_calls[0]["position"] == 0
+
+
+def test_position_changed_branch_still_applies_real_overwrites():
+    existing = FakeCategory(name="Staff", position=3)
+    guild = FakeGuild(categories=[existing])
+    cat = CategorySpec(
+        id="c1", name="Staff", position=0,
+        overwrites=[OverwriteSpec(target="@everyone", deny=["VIEW_CHANNEL"])],
+        channels=[],
+    )
+    spec = _spec([cat])
+
+    asyncio.run(apply_categories(_ctx(guild, spec)))
+
+    assert any(c.get("overwrites") for c in existing.edit_calls)
+    assert existing.edit_calls[0]["position"] == 0
