@@ -4,7 +4,7 @@ import discord
 import json
 from discord import app_commands
 from discord.ext import commands, tasks
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,6 +73,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         self._containers_cache: set[str] = set()
         self._stacks_cache: set[str] = set()
         self._scheduled_maintenances: list[ScheduledMaintenance] = []
+        self._unavailable_logged: set[tuple[int, str]] = set()
         self._load_scheduled_maintenances()
         self.check_scheduled_maintenances.start()
     
@@ -106,11 +107,31 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         except Exception as e:
             print(f"[Downtime] Error saving scheduled maintenances: {e}")
     
+    # An entry whose channel never comes back would otherwise sit in the queue
+    # forever, logging on every tick. Give up on it once it is this far overdue.
+    STALE_AFTER = timedelta(days=7)
+
+    def _expire_stale(self, now: datetime) -> int:
+        """Drop entries too overdue to be worth announcing. Returns how many."""
+        stale = [
+            m for m in self._scheduled_maintenances
+            if not m.announced and (now - m.scheduled_time) > self.STALE_AFTER
+        ]
+        for m in stale:
+            print(
+                f"[Downtime] Giving up on {m.service}: scheduled for "
+                f"{m.scheduled_time.isoformat()}, still unannounced after "
+                f"{self.STALE_AFTER.days} days"
+            )
+            self._scheduled_maintenances.remove(m)
+        return len(stale)
+
     @tasks.loop(seconds=30)
     async def check_scheduled_maintenances(self):
         """Check every 30 seconds if a scheduled maintenance should trigger"""
         now = datetime.now(timezone.utc)
         triggered_any = False
+        expired = self._expire_stale(now)
 
         for maintenance in self._scheduled_maintenances[:]:
             if maintenance.announced:
@@ -139,7 +160,7 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             if not m.announced
         ]
         
-        if triggered_any or len(self._scheduled_maintenances) != old_count:
+        if triggered_any or expired or len(self._scheduled_maintenances) != old_count:
             self._save_scheduled_maintenances()
     
     @check_scheduled_maintenances.before_loop
@@ -180,11 +201,21 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         # no type check, so a maintenance scheduled from inside a thread stores a
         # thread id. Thread.send() works fine; only the incident-thread creation
         # below doesn't apply there, and that's already best-effort.
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            print(
-                f"[Downtime] Channel {maintenance.channel_id} unavailable for "
-                f"{maintenance.service}; leaving it queued"
-            )
+        # Messageable is exactly the right test: it admits TextChannel, Thread,
+        # VoiceChannel and StageChannel (all of which accept .send()) and excludes
+        # CategoryChannel and ForumChannel, which do not. Narrowing this to
+        # TextChannel once regressed /scheduled run from inside a thread into an
+        # entry that could never announce.
+        if not isinstance(channel, discord.abc.Messageable):
+            # Log once per entry rather than on every 30s tick.
+            key = (maintenance.channel_id, maintenance.service)
+            if key not in self._unavailable_logged:
+                self._unavailable_logged.add(key)
+                print(
+                    f"[Downtime] Channel {maintenance.channel_id} unavailable for "
+                    f"{maintenance.service}; leaving it queued (logged once; it will "
+                    f"be dropped {self.STALE_AFTER.days} days after its scheduled time)"
+                )
             return False
 
         # get_user only reads the cache; fall back to the API, and tolerate a

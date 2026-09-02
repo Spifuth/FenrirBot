@@ -17,6 +17,12 @@ python run.py
 cd /srv/nebula && ./scripts/start-docker.sh up management
 ```
 
+`up management` only recreates containers whose image or config changed, so after a rebuild it touches `fenrirbot` alone. To be explicit — or to restart without rebuilding — target the container directly:
+
+```bash
+cd /srv/nebula && ./scripts/start-docker.sh recreate fenrirbot
+```
+
 Run the tests with `python3 -m pytest -q` from the repo root.
 CI runs them plus `ruff` on every pull request and on pushes to `dev`.
 

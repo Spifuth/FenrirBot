@@ -2250,7 +2250,7 @@ Verify: `ls -ln /srv/nebula/docker/appdata/fenrirbot/` → the `data` directory 
 
 ```bash
 cd /srv/project/python/FenrirBot && ./build.sh
-cd /srv/nebula && ./scripts/start-docker.sh recreate management
+cd /srv/nebula && ./scripts/start-docker.sh recreate fenrirbot
 ```
 
 > Never use plain `docker compose` — only `start-docker.sh` injects the Infisical secrets.

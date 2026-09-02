@@ -14,6 +14,7 @@ import discord
 
 import src.cogs.downtime as downtime_module
 from src.cogs.downtime import DowntimeCog, ScheduledMaintenance
+from src.utils.embeds import ServiceType
 
 
 def make_maintenance(
@@ -219,3 +220,91 @@ def test_incident_store_failure_does_not_block_announcement(monkeypatch):
 
     assert cog._scheduled_maintenances == []
     assert m.announced is True
+
+
+class _GotPastTheGuard(Exception):
+    """Raised by the fake channel's send() to prove the guard let us through."""
+
+
+class FakeVoiceLikeChannel(discord.abc.Messageable):
+    """A Messageable that is NOT a TextChannel or Thread — i.e. text-in-voice."""
+
+    async def _get_channel(self):  # required by the Messageable ABC
+        return self
+
+    async def send(self, *a, **kw):
+        raise _GotPastTheGuard()
+
+
+def test_a_messageable_that_is_not_a_textchannel_gets_past_the_channel_guard():
+    # A TextChannel-only guard once made /scheduled run from a thread — and
+    # still makes it run from a text-in-voice channel — permanently unable to
+    # announce: the trigger returned False forever and the entry never fired.
+    # Reaching send() is the proof we got past the guard.
+    cog = make_cog([], FakeTrigger({}))
+    cog.bot = FakeBot(channel=FakeVoiceLikeChannel(), author=FakeAuthor())
+    cog._get_service_type = lambda _s: ServiceType.OTHER
+    m = make_maintenance("svc", minutes_from_now=-1)
+
+    try:
+        asyncio.run(DowntimeCog._trigger_scheduled_downtime(cog, m))
+    except _GotPastTheGuard:
+        pass
+    else:
+        raise AssertionError(
+            "the channel guard rejected a Messageable that is not a TextChannel; "
+            "the entry would sit unannounced forever"
+        )
+
+
+def test_stale_entry_is_dropped_instead_of_queued_forever():
+    ancient = make_maintenance("ancient", minutes_from_now=-60 * 24 * 8)  # 8 days overdue
+    recent = make_maintenance("recent", minutes_from_now=-1)
+    trigger = FakeTrigger({"recent": True})
+    cog = make_cog([ancient, recent], trigger)
+
+    run_check(cog)
+
+    assert [m.service for m in cog._scheduled_maintenances] == []
+    assert trigger.calls == ["recent"], "the stale entry must not be announced on its way out"
+
+
+def test_entry_just_inside_the_stale_window_is_still_attempted():
+    m = make_maintenance("svc", minutes_from_now=-60 * 24 * 6)  # 6 days overdue
+    trigger = FakeTrigger({"svc": True})
+    cog = make_cog([m], trigger)
+
+    run_check(cog)
+
+    assert trigger.calls == ["svc"]
+
+
+def test_catchup_keeps_an_entry_whose_trigger_returns_false():
+    m = make_maintenance("traefik", minutes_from_now=-10)
+    cog = make_cog([m], FakeTrigger({"traefik": False}))
+
+    asyncio.run(cog._catchup_missed_maintenances())
+
+    assert [x.service for x in cog._scheduled_maintenances] == ["traefik"]
+    assert cog._scheduled_maintenances[0].announced is False
+
+
+def test_catchup_survives_a_raising_entry_and_still_announces_the_next():
+    cog = make_cog(
+        [make_maintenance("boom", minutes_from_now=-10),
+         make_maintenance("traefik", minutes_from_now=-10)],
+        FakeTrigger({"boom": KeyError("x"), "traefik": True}),
+    )
+
+    asyncio.run(cog._catchup_missed_maintenances())
+
+    assert [x.service for x in cog._scheduled_maintenances] == ["boom"]
+
+
+def test_catchup_removes_an_entry_it_announced():
+    cog = make_cog([make_maintenance("traefik", minutes_from_now=-10)],
+                   FakeTrigger({"traefik": True}))
+
+    asyncio.run(cog._catchup_missed_maintenances())
+
+    assert cog._scheduled_maintenances == []
