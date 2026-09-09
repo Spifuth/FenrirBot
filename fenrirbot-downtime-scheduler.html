@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FenrirBot — Downtime & Scheduler Flow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #090e16;
+      color: #f1f5f9;
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 20px 16px 40px;
+    }
+    .container {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── Header ── */
+    .header-block { display: flex; flex-direction: column; gap: 6px; }
+    .eyebrow { font-size: 11px; color: #475569; letter-spacing: 0.25em; text-transform: uppercase; }
+    .title { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 40px; color: #f1f5f9; line-height: 1; }
+    .subtitle { font-size: 10px; color: #475569; letter-spacing: 0.04em; line-height: 1.6; }
+    .badge-row { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 100px;
+      font-size: 10px; letter-spacing: 0.1em; font-weight: 600;
+      background: #60a5fa10; border: 1px solid #60a5fa55; color: #60a5fa;
+      width: fit-content; transition: color 0.4s ease, background 0.4s ease, border-color 0.4s ease;
+    }
+    .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: blink 1.4s ease-in-out infinite; }
+    .counter { font-size: 10px; color: #334155; }
+    .counter span { color: #475569; }
+
+    /* ── Diagram ── */
+    .diagram-block {
+      background: #0d1520; border: 1px solid #1e293b; border-radius: 12px; padding: 14px;
+    }
+    .diagram-grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: 1fr 1fr;
+      gap: 8px;
+      min-height: 190px;
+    }
+    #flow-svg {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; overflow: visible;
+    }
+    .panel {
+      background: #0a1119; border: 1px solid #1e293b; border-radius: 8px;
+      padding: 9px 7px; display: flex; flex-direction: column; gap: 3px;
+      position: relative; z-index: 1;
+      transition: border-color 0.35s ease, box-shadow 0.35s ease, background 0.35s ease;
+    }
+    .panel-label { font-size: 7px; color: #64748b; letter-spacing: 0.15em; text-transform: uppercase; }
+    .panel-name { font-size: 10px; font-weight: 600; color: #94a3b8; line-height: 1.25; }
+    .panel-sub { font-size: 8px; color: #334155; margin-top: 1px; }
+    .panel-status { font-size: 8px; margin-top: 3px; min-height: 11px; transition: color 0.3s ease; }
+
+    .panel.glow-blue  { border-color: #3b82f644; background: #0d1826; animation: gb 2s ease-in-out infinite; }
+    .panel.glow-green { border-color: #22c55e44; background: #0d1a13; animation: gg 2s ease-in-out infinite; }
+    .panel.glow-orange{ border-color: #f9731644; background: #1a1108; animation: go 2s ease-in-out infinite; }
+    .panel.glow-purple{ border-color: #a855f744; background: #130d1a; animation: gp 2s ease-in-out infinite; }
+    .panel.glow-teal  { border-color: #14b8a644; background: #0a1a18; animation: gt 2s ease-in-out infinite; }
+
+    @keyframes gb { 0%,100%{box-shadow:0 0 0 transparent} 50%{box-shadow:0 0 16px #3b82f622,inset 0 0 8px #3b82f610} }
+    @keyframes gg { 0%,100%{box-shadow:0 0 0 transparent} 50%{box-shadow:0 0 16px #22c55e22,inset 0 0 8px #22c55e10} }
+    @keyframes go { 0%,100%{box-shadow:0 0 0 transparent} 50%{box-shadow:0 0 16px #f9731622,inset 0 0 8px #f9731610} }
+    @keyframes gp { 0%,100%{box-shadow:0 0 0 transparent} 50%{box-shadow:0 0 16px #a855f722,inset 0 0 8px #a855f710} }
+    @keyframes gt { 0%,100%{box-shadow:0 0 0 transparent} 50%{box-shadow:0 0 16px #14b8a622,inset 0 0 8px #14b8a610} }
+
+    /* ── Detail block ── */
+    .detail-block { display: flex; flex-direction: column; gap: 8px; }
+    .incident-panel { background: #0d1520; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; min-height: 90px; }
+    .section-label { font-size: 9px; color: #64748b; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 8px; }
+    .incident-service { font-size: 11px; color: #94a3b8; }
+    .incident-reason { font-size: 10px; color: #475569; margin-top: 2px; }
+    .incident-timer { font-size: 22px; font-weight: 700; color: #fb923c; margin-top: 6px; font-variant-numeric: tabular-nums; transition: color 0.5s ease; }
+    .incident-buttons { display: flex; gap: 6px; margin-top: 8px; }
+    .btn { font-family: 'JetBrains Mono', monospace; font-size: 9px; padding: 4px 9px; border-radius: 4px; border: 1px solid; letter-spacing: 0.04em; transition: all 0.3s ease; }
+    .btn-restore { background: #22c55e18; border-color: #22c55e44; color: #4ade80; }
+    .btn-restore.pressed { background: #22c55e44; border-color: #4ade80; box-shadow: 0 0 8px #22c55e44; }
+    .btn-cancel { background: #ef444418; border-color: #ef444444; color: #f87171; }
+
+    /* ── Log ── */
+    .log-panel { background: #0d1520; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 12px; overflow: hidden; }
+    .log-entries { display: flex; flex-direction: column; gap: 3px; max-height: 160px; overflow: hidden; }
+    .log-entry { font-size: 9px; color: #64748b; animation: slide-in 0.25s ease; display: flex; gap: 6px; }
+    .log-ts { color: #1e293b; flex-shrink: 0; }
+    .log-msg { word-break: break-all; }
+
+    /* ── Tags / Footer ── */
+    .tags-row { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag { font-size: 9px; color: #334155; background: #0d1520; border: 1px solid #1e293b; border-radius: 100px; padding: 3px 9px; }
+    .footer { font-size: 10px; color: #1e293b; text-align: center; padding-top: 2px; }
+
+    /* ── Sparkline ── */
+    .sparkline-wrap { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    .sparkline-label { font-size: 9px; color: #334155; }
+    .sparkline svg { display: block; }
+
+    /* ── Keyframes ── */
+    @keyframes ping { 75%,100%{ transform:scale(2.4); opacity:0 } }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes slide-in { from{transform:translateY(-6px);opacity:0} to{transform:translateY(0);opacity:1} }
+    @keyframes badge-morph { 0%{transform:scaleX(1);opacity:1} 40%{transform:scaleX(0.1);opacity:0} 60%{transform:scaleX(0.1);opacity:0} 100%{transform:scaleX(1);opacity:1} }
+    @keyframes svg-flow { from{stroke-dashoffset:10} to{stroke-dashoffset:0} }
+    @keyframes sched-pulse { 0%,100%{opacity:0.5} 50%{opacity:1} }
+
+    /* ── Desktop ── */
+    @media (min-width: 780px) {
+      .container {
+        max-width: 960px;
+        display: grid;
+        grid-template-areas: "header header" "diagram detail";
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto 1fr;
+        gap: 16px;
+        align-items: start;
+      }
+      .header-block { grid-area: header; }
+      .diagram-block { grid-area: diagram; }
+      .detail-block { grid-area: detail; }
+      .title { font-size: 52px; }
+      .subtitle { font-size: 11px; }
+      .diagram-grid { min-height: 260px; gap: 12px; }
+      .panel { padding: 12px 10px; }
+      .panel-label { font-size: 8px; }
+      .panel-name { font-size: 12px; }
+      .panel-sub { font-size: 9px; }
+      .panel-status { font-size: 9px; }
+      .log-entries { max-height: 220px; }
+      .log-entry { font-size: 10px; }
+      .incident-timer { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header-block">
+    <div class="eyebrow">DISCORD BOT · HOMELAB MONITORING</div>
+    <div class="title">🐺 FenrirBot</div>
+    <div class="subtitle">
+      /downtime → DowntimeCog → DowntimeView → #annonces<br>
+      tasks.loop (30s) → maintenances.json → auto-trigger → Discord
+    </div>
+    <div class="badge-row">
+      <div class="badge" id="badge">
+        <div class="badge-dot"></div>
+        <span id="badge-text">FENRIR EN VEILLE</span>
+      </div>
+      <div class="counter">incidents: <span id="counter">0</span></div>
+    </div>
+  </div>
+
+  <!-- Diagram -->
+  <div class="diagram-block">
+    <div class="diagram-grid" id="diagram-grid">
+      <svg id="flow-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+
+      <!-- Row 1 -->
+      <div class="panel" id="p-admin" style="grid-column:1;grid-row:1">
+        <div class="panel-label">TRIGGER</div>
+        <div class="panel-name">Admin<br>/downtime</div>
+        <div class="panel-sub">slash cmd</div>
+        <div class="panel-status" id="ps-admin">—</div>
+      </div>
+      <div class="panel" id="p-cog" style="grid-column:2;grid-row:1">
+        <div class="panel-label">PROCESSOR</div>
+        <div class="panel-name">Downtime<br>Cog</div>
+        <div class="panel-sub">commands.Cog</div>
+        <div class="panel-status" id="ps-cog">—</div>
+      </div>
+      <div class="panel" id="p-view" style="grid-column:3;grid-row:1">
+        <div class="panel-label">INTERFACE</div>
+        <div class="panel-name">Downtime<br>View</div>
+        <div class="panel-sub">ui.View+timer</div>
+        <div class="panel-status" id="ps-view">—</div>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="panel" id="p-sched" style="grid-column:1;grid-row:2">
+        <div class="panel-label">SCHEDULER</div>
+        <div class="panel-name">tasks.loop<br>30s</div>
+        <div class="panel-sub">background</div>
+        <div class="panel-status" id="ps-sched">—</div>
+      </div>
+      <div class="panel" id="p-json" style="grid-column:2;grid-row:2">
+        <div class="panel-label">STORE</div>
+        <div class="panel-name">maintenances<br>.json</div>
+        <div class="panel-sub">data/ persist</div>
+        <div class="panel-status" id="ps-json">—</div>
+      </div>
+      <div class="panel" id="p-channel" style="grid-column:3;grid-row:2">
+        <div class="panel-label">OUTPUT</div>
+        <div class="panel-name">#annonces<br>Discord</div>
+        <div class="panel-sub">embed + @role</div>
+        <div class="panel-status" id="ps-channel">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail -->
+  <div class="detail-block">
+    <div class="incident-panel">
+      <div class="section-label">INCIDENT ACTIF</div>
+      <div id="incident-body">
+        <div style="color:#1e293b;font-size:11px">Aucun incident en cours</div>
+      </div>
+    </div>
+
+    <div class="log-panel">
+      <div class="section-label">EVENT LOG</div>
+      <div class="log-entries" id="log-entries"></div>
+    </div>
+
+    <div class="tags-row">
+      <div class="tag">discord.py</div>
+      <div class="tag">aiohttp</div>
+      <div class="tag">asyncio</div>
+      <div class="tag">tasks.loop</div>
+      <div class="tag">ui.View</div>
+      <div class="tag">json persist</div>
+      <div class="tag">FenrirPersonality</div>
+    </div>
+
+    <div class="footer">🐺 FenrirBot · downtime-scheduler-flow</div>
+  </div>
+
+</div>
+<script>
+// ── SVG path connections ─────────────────────────────────────────
+const CONNS = [
+  { id:'admin-cog',    from:'p-admin',   to:'p-cog',     fe:'right', te:'left',   color:'#3b82f6', cname:'blue'   },
+  { id:'cog-view',     from:'p-cog',     to:'p-view',    fe:'right', te:'left',   color:'#f97316', cname:'orange' },
+  { id:'view-channel', from:'p-view',    to:'p-channel', fe:'bottom',te:'top',    color:'#22c55e', cname:'green'  },
+  { id:'sched-json',   from:'p-sched',   to:'p-json',    fe:'right', te:'left',   color:'#a855f7', cname:'purple' },
+  { id:'json-cog',     from:'p-json',    to:'p-cog',     fe:'top',   te:'bottom', color:'#a855f7', cname:'purple' },
+  { id:'cog-channel',  from:'p-cog',     to:'p-channel', fe:'right', te:'top',    color:'#22c55e', cname:'green'  },
+  { id:'view-cog-fb',  from:'p-view',    to:'p-cog',     fe:'left',  te:'right',  color:'#f97316', cname:'orange', arc:'above' },
+];
+
+const svgPaths = {};
+
+function edgePoint(rect, cRect, edge) {
+  const cx = rect.left - cRect.left + rect.width  / 2;
+  const cy = rect.top  - cRect.top  + rect.height / 2;
+  switch (edge) {
+    case 'right':  return [rect.right  - cRect.left, cy];
+    case 'left':   return [rect.left   - cRect.left, cy];
+    case 'top':    return [cx, rect.top    - cRect.top];
+    case 'bottom': return [cx, rect.bottom - cRect.top];
+  }
+}
+
+function buildD(fromEl, toEl, fe, te, container, arc) {
+  const cRect = container.getBoundingClientRect();
+  const fRect = fromEl.getBoundingClientRect();
+  const tRect = toEl.getBoundingClientRect();
+  const [x1, y1] = edgePoint(fRect, cRect, fe);
+  const [x2, y2] = edgePoint(tRect, cRect, te);
+  let cx1, cy1, cx2, cy2;
+  if (arc === 'above') {
+    cx1 = x1 - 14; cy1 = Math.min(y1, y2) - 22;
+    cx2 = x2 + 14; cy2 = Math.min(y1, y2) - 22;
+  } else if (fe === 'right' && te === 'left') {
+    const mx = (x1 + x2) / 2;
+    cx1 = mx; cy1 = y1; cx2 = mx; cy2 = y2;
+  } else if ((fe === 'top' && te === 'bottom') || (fe === 'bottom' && te === 'top')) {
+    const my = (y1 + y2) / 2;
+    cx1 = x1; cy1 = my; cx2 = x2; cy2 = my;
+  } else {
+    // diagonal (cog→channel: right→top)
+    cx1 = x1 + (x2 - x1) * 0.6; cy1 = y1;
+    cx2 = x2; cy2 = y2 + (y1 - y2) * 0.5;
+  }
+  return `M ${x1},${y1} C ${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`;
+}
+
+function initSvg() {
+  const svg = document.getElementById('flow-svg');
+  const grid = document.getElementById('diagram-grid');
+  const gRect = grid.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${gRect.width} ${gRect.height}`);
+  svg.setAttribute('width', gRect.width);
+  svg.setAttribute('height', gRect.height);
+  svg.innerHTML = '<defs>' + CONNS.map(c =>
+    `<marker id="arr-${c.cname}" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+       <path d="M0,0.5 L5,3 L0,5.5 Z" fill="${c.color}" opacity="0.5"/>
+     </marker>`
+  ).join('') + '</defs>';
+
+  CONNS.forEach(c => {
+    const fromEl = document.getElementById(c.from);
+    const toEl   = document.getElementById(c.to);
+    const d = buildD(fromEl, toEl, c.fe, c.te, grid, c.arc);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', c.color);
+    path.setAttribute('stroke-width', '1');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('opacity', '0.12');
+    path.setAttribute('stroke-dasharray', '4 5');
+    path.setAttribute('marker-end', `url(#arr-${c.cname})`);
+    path.id = 'svgpath-' + c.id;
+    svg.appendChild(path);
+    svgPaths[c.id] = path;
+  });
+}
+
+function activatePath(id) {
+  const p = svgPaths[id]; if (!p) return;
+  p.style.opacity = '0.7';
+  p.style.strokeDasharray = '6 4';
+  p.style.animation = 'svg-flow 0.5s linear infinite';
+}
+function deactivatePath(id) {
+  const p = svgPaths[id]; if (!p) return;
+  p.style.opacity = '0.12';
+  p.style.strokeDasharray = '4 5';
+  p.style.animation = '';
+}
+function deactivateAllPaths() { CONNS.forEach(c => deactivatePath(c.id)); }
+
+// ── Particles ────────────────────────────────────────────────────
+function particle(fromId, toId, color, delay = 0) {
+  setTimeout(() => {
+    const from = document.getElementById(fromId);
+    const to   = document.getElementById(toId);
+    if (!from || !to) return;
+    const fR = from.getBoundingClientRect();
+    const tR = to.getBoundingClientRect();
+    const p = document.createElement('div');
+    p.style.cssText = `
+      position:fixed;width:7px;height:7px;border-radius:50%;
+      background:${color};box-shadow:0 0 8px ${color};
+      pointer-events:none;z-index:9999;
+      left:${fR.left + fR.width/2 - 3.5}px;top:${fR.top + fR.height/2 - 3.5}px;
+      transition:left 0.75s cubic-bezier(0.4,0,0.2,1),top 0.75s cubic-bezier(0.4,0,0.2,1),opacity 0.75s ease;
+    `;
+    document.body.appendChild(p);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      p.style.left = (tR.left + tR.width/2 - 3.5) + 'px';
+      p.style.top  = (tR.top  + tR.height/2 - 3.5) + 'px';
+      p.style.opacity = '0';
+    }));
+    setTimeout(() => p.remove(), 900);
+  }, delay);
+}
+
+// ── Panel helpers ────────────────────────────────────────────────
+const ALL_PANELS = ['p-admin','p-cog','p-view','p-sched','p-json','p-channel'];
+function glow(id, color) {
+  const el = document.getElementById(id);
+  el.className = 'panel glow-' + color;
+}
+function unglow(id) { document.getElementById(id).className = 'panel'; }
+function unglowAll() { ALL_PANELS.forEach(unglow); }
+
+function pStatus(shortId, text, color) {
+  const el = document.getElementById('ps-' + shortId);
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = color;
+}
+function clearStatuses() {
+  ['admin','cog','view','sched','json','channel'].forEach(id => pStatus(id, '—', '#334155'));
+}
+
+// ── Badge ────────────────────────────────────────────────────────
+function setBadge(text, color) {
+  const badge = document.getElementById('badge');
+  const bt    = document.getElementById('badge-text');
+  badge.style.animation = 'none';
+  void badge.offsetHeight;
+  badge.style.animation = 'badge-morph 0.5s ease forwards';
+  setTimeout(() => {
+    badge.style.color = color;
+    badge.style.background = color + '10';
+    badge.style.borderColor = color + '55';
+    bt.textContent = text;
+  }, 220);
+  setTimeout(() => { badge.style.animation = ''; }, 520);
+}
+
+// ── Log ─────────────────────────────────────────────────────────
+function addLog(msg, color = '#64748b') {
+  const container = document.getElementById('log-entries');
+  const now = new Date();
+  const ts = now.toTimeString().slice(0, 8);
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `<span class="log-ts">${ts}</span><span class="log-msg" style="color:${color}">${msg}</span>`;
+  container.insertBefore(div, container.firstChild);
+  while (container.children.length > 12) container.removeChild(container.lastChild);
+}
+
+// ── Countdown ───────────────────────────────────────────────────
+let countdownSecs = 0;
+let cdInterval    = null;
+let totalIncidents = 0;
+
+function startCountdown(totalSecs) {
+  countdownSecs = totalSecs;
+  updateCd();
+  cdInterval = setInterval(() => {
+    countdownSecs = Math.max(0, countdownSecs - 1);
+    updateCd();
+    if (countdownSecs > 0 && countdownSecs % 20 === 0) {
+      const m = Math.floor(countdownSecs / 60), s = countdownSecs % 60;
+      addLog(`DowntimeView: ${m}:${s.toString().padStart(2,'0')} restantes`, '#fb923c');
+    }
+  }, 1000);
+}
+function stopCountdown() { if (cdInterval) { clearInterval(cdInterval); cdInterval = null; } }
+function updateCd() {
+  const m = Math.floor(countdownSecs / 60), s = countdownSecs % 60;
+  const el = document.getElementById('cd-timer');
+  if (el) el.textContent = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+}
+
+// ── Incident panel ───────────────────────────────────────────────
+function setIncident(state, service = '', reason = '') {
+  const body = document.getElementById('incident-body');
+  if (state === 'none') {
+    body.innerHTML = '<div style="color:#1e293b;font-size:11px">Aucun incident en cours</div>';
+    return;
+  }
+  if (state === 'active') {
+    totalIncidents++;
+    document.getElementById('counter').textContent = totalIncidents;
+    body.innerHTML = `
+      <div class="incident-service"><span style="color:#fb923c">● HORS LIGNE</span> — ${service}</div>
+      <div class="incident-reason">${reason}</div>
+      <div class="incident-timer" id="cd-timer">30:00</div>
+      <div class="incident-buttons">
+        <div class="btn btn-restore" id="btn-restore">🔧 Restaurer</div>
+        <div class="btn btn-cancel">✕ Annuler</div>
+      </div>`;
+  }
+  if (state === 'restored') {
+    stopCountdown();
+    body.innerHTML = `
+      <div class="incident-service"><span style="color:#4ade80">✅ RESTAURÉ</span> — ${service}</div>
+      <div class="incident-timer" style="color:#4ade80">00:00</div>`;
+  }
+  if (state === 'scheduled') {
+    totalIncidents++;
+    document.getElementById('counter').textContent = totalIncidents;
+    body.innerHTML = `
+      <div class="incident-service"><span style="color:#c084fc">◷ AUTO-TRIGGER</span> — ${service}</div>
+      <div class="incident-reason">${reason}</div>
+      <div style="color:#a855f7;font-size:12px;font-weight:700;margin-top:8px">PLANIFIÉ 03:00</div>`;
+  }
+}
+
+// ── Sparkline (incidents per-cycle) ─────────────────────────────
+let sparkData = [];
+function updateSparkline() {
+  const svg = document.getElementById('sparksvg');
+  if (!svg) return;
+  sparkData = [...sparkData.slice(-19), totalIncidents];
+  const maxV = Math.max(...sparkData, 1);
+  const pts = sparkData.map((v, i) => `${(i / 19) * 90},${18 - (v / maxV) * 15}`).join(' ');
+  const poly = svg.querySelector('polyline');
+  if (poly) poly.setAttribute('points', pts);
+}
+
+// ── Phase machine ────────────────────────────────────────────────
+let phaseIdx = 0;
+let phaseTimer = null;
+
+const PHASES = [
+  // [name, durationMs, fn]
+  ['idle',           2000, phIdle],
+  ['manual-trigger', 1500, phManualTrigger],
+  ['cog-process',    1400, phCogProcess],
+  ['view-created',   1900, phViewCreated],
+  ['countdown',      6000, phCountdown],
+  ['restore',        1400, phRestore],
+  ['restored',       1900, phRestored],
+  ['pause',          1200, phPause],
+  ['sched-poll',     1600, phSchedPoll],
+  ['json-found',     1000, phJsonFound],
+  ['auto-cog',       1400, phAutoCog],
+  ['auto-announce',  2000, phAutoAnnounce],
+];
+
+function nextPhase() {
+  phaseIdx = (phaseIdx + 1) % PHASES.length;
+  const [, dur, fn] = PHASES[phaseIdx];
+  fn();
+  phaseTimer = setTimeout(nextPhase, dur);
+}
+
+function phIdle() {
+  unglowAll(); deactivateAllPaths(); clearStatuses();
+  setIncident('none');
+  setBadge('FENRIR EN VEILLE', '#475569');
+}
+
+function phManualTrigger() {
+  glow('p-admin', 'blue');
+  pStatus('admin', '/downtime', '#60a5fa');
+  activatePath('admin-cog');
+  particle('p-admin', 'p-cog', '#3b82f6');
+  setBadge('COMMANDE REÇUE...', '#60a5fa');
+  addLog("Admin: /downtime service:Plex reason:Mise à jour", '#60a5fa');
+  addLog("FenrirBot: validation de la commande...", '#475569');
+}
+
+function phCogProcess() {
+  unglow('p-admin'); deactivatePath('admin-cog');
+  glow('p-cog', 'green');
+  pStatus('cog', 'traitement', '#4ade80');
+  setBadge('COG EN TRAITEMENT...', '#4ade80');
+  addLog("DowntimeCog: création de DowntimeView — 30 min", '#4ade80');
+  addLog("DowntimeCog: chargement de la personnalité Fenrir...", '#334155');
+}
+
+function phViewCreated() {
+  unglow('p-cog');
+  glow('p-view', 'orange');
+  glow('p-channel', 'teal');
+  pStatus('view', 'ACTIF 🔴', '#fb923c');
+  pStatus('channel', 'embed posté', '#2dd4bf');
+  activatePath('cog-view');
+  activatePath('view-channel');
+  particle('p-cog', 'p-view', '#f97316');
+  particle('p-view', 'p-channel', '#22c55e', 400);
+  setBadge('INCIDENT ACTIF 🔴', '#fb923c');
+  setIncident('active', 'Plex', 'Mise à jour du serveur multimédia');
+  addLog("DowntimeView: embed posté sur #annonces", '#2dd4bf');
+  addLog("DowntimeView: minuterie démarrée (30:00)", '#fb923c');
+}
+
+function phCountdown() {
+  deactivatePath('cog-view');
+  unglow('p-channel');
+  pStatus('channel', '—', '#334155');
+  activatePath('view-channel');
+  setBadge('MINUTERIE EN COURS...', '#fb923c');
+  startCountdown(30 * 60);
+  addLog("DowntimeView: en attente — boutons actifs", '#475569');
+}
+
+function phRestore() {
+  stopCountdown();
+  deactivatePath('view-channel');
+  const btn = document.getElementById('btn-restore');
+  if (btn) btn.classList.add('pressed');
+  activatePath('view-cog-fb');
+  particle('p-view', 'p-cog', '#f97316');
+  setBadge('RESTAURATION...', '#4ade80');
+  addLog("🔧 Bouton 'Restaurer' pressé par admin", '#4ade80');
+  addLog("DowntimeView → DowntimeCog: callback de restauration", '#f97316');
+}
+
+function phRestored() {
+  deactivatePath('view-cog-fb');
+  unglow('p-view');
+  glow('p-cog', 'green');
+  glow('p-channel', 'teal');
+  activatePath('cog-channel');
+  particle('p-cog', 'p-channel', '#22c55e');
+  setBadge('SERVICE RESTAURÉ ✅', '#4ade80');
+  setIncident('restored', 'Plex');
+  pStatus('cog', 'restauration', '#4ade80');
+  pStatus('channel', 'résolu', '#2dd4bf');
+  addLog("✅ Service restauré — embed mis à jour", '#4ade80');
+  addLog("DowntimeCog: thread incident archivé", '#334155');
+  updateSparkline();
+}
+
+function phPause() {
+  unglowAll(); deactivateAllPaths(); clearStatuses();
+  setIncident('none');
+  setBadge('FENRIR EN VEILLE', '#475569');
+}
+
+function phSchedPoll() {
+  glow('p-sched', 'purple');
+  pStatus('sched', 'tick #847', '#c084fc');
+  activatePath('sched-json');
+  particle('p-sched', 'p-json', '#a855f7');
+  setBadge('SCHEDULER POLLING...', '#c084fc');
+  addLog("tasks.loop: tick #847 — vérification maintenances", '#c084fc');
+  addLog("Lecture: data/scheduled_maintenances.json", '#475569');
+}
+
+function phJsonFound() {
+  deactivatePath('sched-json');
+  glow('p-json', 'purple');
+  pStatus('json', '1 trouvée', '#c084fc');
+  setBadge('MAINTENANCE TROUVÉE', '#c084fc');
+  addLog("1 maintenance planifiée: Serveur Minecraft 03:00", '#c084fc');
+  addLog("maintenances.json: déclenchement imminent...", '#334155');
+}
+
+function phAutoCog() {
+  activatePath('json-cog');
+  particle('p-json', 'p-cog', '#a855f7');
+  glow('p-cog', 'green');
+  pStatus('cog', 'auto-trigger', '#4ade80');
+  setBadge('DÉCLENCHEMENT AUTO...', '#c084fc');
+  addLog("DowntimeCog: auto-déclenchement maintenance planifiée", '#4ade80');
+  addLog("FenrirPersonality: mood=NIGHT — message sélectionné", '#334155');
+}
+
+function phAutoAnnounce() {
+  deactivatePath('json-cog');
+  unglow('p-json');
+  glow('p-channel', 'teal');
+  activatePath('cog-channel');
+  particle('p-cog', 'p-channel', '#22c55e');
+  setBadge('ANNONCE POSTÉE ◷', '#2dd4bf');
+  setIncident('scheduled', 'Serveur Minecraft', 'Maintenance planifiée — redémarrage hebdomadaire');
+  pStatus('channel', 'maintenance', '#2dd4bf');
+  addLog("Embed maintenance posté sur #annonces", '#2dd4bf');
+  addLog("DowntimeCog: suppression de l'entrée JSON", '#334155');
+  updateSparkline();
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  // Small delay so layout is fully painted
+  setTimeout(() => {
+    initSvg();
+    phIdle();
+    phaseTimer = setTimeout(nextPhase, 2000);
+  }, 80);
+});
+
+// Recompute SVG on resize
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(initSvg, 150);
+});
+</script>
+</body>
+</html>
