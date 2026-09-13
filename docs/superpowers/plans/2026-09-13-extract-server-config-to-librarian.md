@@ -975,6 +975,15 @@ Expected: **a no-op diff** — no roles, categories or channels to create, edit 
 
 A non-empty diff means the lift changed behaviour. **Stop. Do not run `apply`. Do not remove the cog from FenrirBot.** Investigate first.
 
+
+> **Do not leave both bots running overnight.** Once the state file is migrated, the
+> Librarian and FenrirBot hold the *same* reaction bindings, so `on_raw_reaction_add`
+> fires in both. `_handle_reaction` guards with `if role not in member.roles` (and the
+> mirror on removal), so the second call is a no-op rather than an error — but it is
+> still a duplicate Discord API call and a duplicate audit-log entry every time someone
+> reacts. The overlap is deliberate (it means no reaction is ever *dropped*), but keep it
+> to minutes: if the diff is clean, go straight to Step 7.
+
 - [ ] **Step 7: Only now, remove the cog from FenrirBot**
 
 On branch `refactor/extract-server-config` in `/srv/project/python/FenrirBot`:
