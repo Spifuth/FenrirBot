@@ -4,11 +4,24 @@ Discord bot for announcing server/Docker stack downtime to your friends.
 
 ## Features
 
-- **`/downtime`** - Announce a service is going offline (with reason & estimated duration)
-- **`/backup`** - Announce a service is back online
-- **`/scheduled`** - Announce planned maintenance windows
-- **`/status`** - Send quick status updates
-- **`!down`** / **`!up`** - Quick prefix commands for fast announcements
+All commands are **administrator-only** except `/ping`.
+
+**Announcements**
+- **`/maintenance`** — announce a maintenance (update, backup, config, security patch, migration) with an interactive "terminé" button and an incident thread
+- **`/up`** — announce a service is back
+- **`/scheduled`** — schedule a future maintenance; it fires automatically (times are read as **Europe/Paris**)
+- **`/scheduled-list`** / **`/scheduled-cancel`** — manage pending schedules
+- **`/status`**, **`!status`** — quick status update
+
+**Homelab readouts**
+- **`/containers`**, **`/stacks`**, **`/refresh`** — Docker inventory via `socket-proxy`
+- **`/dashboard`** — container status overview
+- **`/rapport`** — CPU/RAM/network report from VictoriaMetrics
+- **`/alerts`** — active Grafana alerts
+- **`/ping`** — latency check (open to everyone)
+
+**Server configuration**
+- **`/server-config validate|diff|apply|export`** and **`/server-config webhooks reveal`** — declarative guild reconciliation from `specs/server-spec.yaml`. See [`src/server_config/README.md`](src/server_config/README.md).
 
 ## Project Structure
 
@@ -17,20 +30,29 @@ FenrirBot/
 ├── run.py                 # Entry point
 ├── requirements.txt       # Dependencies
 ├── .env.example           # Environment template
-├── scripts/
-│   ├── setup.sh           # Automated setup (venv + deps)
-│   └── run.sh             # Run with venv
 └── src/
     ├── __init__.py
     ├── bot.py             # Bot class & initialization
     ├── config.py          # Configuration management
     ├── cogs/              # Command modules
-    │   ├── __init__.py
-    │   ├── downtime.py    # Downtime commands
-    │   └── status.py      # Status commands
+    │   ├── downtime.py    # /maintenance, /up, /scheduled*
+    │   ├── status.py      # /status, /ping
+    │   ├── docker.py      # /containers, /stacks, /refresh
+    │   ├── dashboard.py   # /dashboard
+    │   ├── reports.py     # /rapport (VictoriaMetrics)
+    │   ├── alerts.py      # /alerts (Grafana)
+    │   └── server_config.py  # /server-config *
+    ├── server_config/     # Declarative guild reconciliation
     └── utils/
-        ├── __init__.py
-        └── embeds.py      # Embed builders
+        ├── embeds.py      # Embed builders
+        ├── views.py       # Interactive buttons (persistent)
+        ├── incidents.py   # Open-incident persistence
+        ├── permissions.py # admin_only() gate
+        ├── docker.py      # Docker SDK wrapper + cache
+        ├── grafana.py     # Grafana REST client
+        ├── victoriametrics.py
+        ├── helpers.py     # Shared helpers, PARIS_TZ
+        └── personality.py # Mood by time of day
 ```
 
 ## Setup
@@ -47,17 +69,15 @@ FenrirBot/
    - Bot Permissions: `Send Messages`, `Embed Links`, `Mention Everyone`
 7. Use the generated URL to invite the bot to your server
 
-### 2. Quick Setup (Recommended)
+### 2. Setup
 
 ```bash
 cd /srv/project/python/FenrirBot
-./scripts/setup.sh
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env
 ```
-
-This will:
-- Create a Python virtual environment (`venv/`)
-- Install all dependencies
-- Create `.env` from template
 
 Then edit `.env` with your values:
 ```
@@ -70,74 +90,41 @@ ANNOUNCEMENT_CHANNEL_ID=123456789012345678
 ### 3. Run the Bot
 
 ```bash
-./scripts/run.sh
-```
-
-Or manually:
-```bash
 source venv/bin/activate
 python run.py
 ```
 
+### 4. Run the tests
+
+```bash
+python3 -m pytest -q
+```
+
+### 5. Deploy
+
+```bash
+./build.sh                                        # builds fenrirbot:latest
+cd /srv/nebula && ./scripts/start-docker.sh up management
+```
+
+`up management` only recreates containers whose image or config changed, so after a rebuild it touches `fenrirbot` alone. To be explicit — or to restart without rebuilding — target the container directly:
+
+```bash
+cd /srv/nebula && ./scripts/start-docker.sh recreate fenrirbot
+```
+
 ## Usage Examples
 
-### Slash Commands (recommended)
 ```
-/downtime service:Minecraft Server reason:Updating mods duration:30 minutes
-/backup service:Minecraft Server
-/scheduled service:Plex when:Saturday 2 AM duration:1 hour reason:Database migration
-/status message:All systems operational
+/maintenance service:traefik maintenance_type:security reason:Patch CVE duration:30 minutes
+/up service:traefik
+/scheduled service:plex when:2026-09-05 22:00 duration:1 heure reason:Migration DB
+/status message:Tout est opérationnel
+/rapport periode:weekly
 /ping
 ```
 
-### Quick Prefix Commands
-```
-!down "Minecraft Server" Updating to 1.21
-!up Minecraft Server
-!status All systems operational
-```
-
-## 🖥️ Netdata Integration (System Monitoring)
-
-Fenrir can receive alerts from Netdata for CPU, RAM, Disk, Network, and Temperature monitoring.
-
-### Setup Netdata Webhooks
-
-1. **Enable webhooks in your `.env`:**
-```env
-WEBHOOK_ENABLED=true
-WEBHOOK_HOST=0.0.0.0
-WEBHOOK_PORT=8085
-WEBHOOK_SECRET=your_secret_token  # Optional but recommended
-NETDATA_URL=http://localhost:19999  # For /netdata commands
-```
-
-2. **Configure Netdata to send alerts to Fenrir:**
-```bash
-# On your Netdata server, run:
-./scripts/setup-netdata-webhook.sh http://YOUR_BOT_IP:8085 your_secret_token
-```
-
-3. **Or configure manually** - Edit `/etc/netdata/health_alarm_notify.conf`:
-```bash
-SEND_CUSTOM="YES"
-DEFAULT_RECIPIENT_CUSTOM="http://YOUR_BOT_IP:8080/webhook/netdata"
-```
-
-### Netdata Slash Commands
-```
-/netdata status   # View current CPU, RAM, Disk usage
-/netdata alarms   # View active alerts
-/netdata test     # Send a test alert
-```
-
-### Supported Alert Types
-- 🖥️ **CPU** - High CPU utilization alerts
-- 🧠 **RAM** - Memory usage warnings
-- 💾 **Disk** - Disk space alerts
-- 🌐 **Network** - Bandwidth and traffic alerts
-- 🌡️ **Temperature** - CPU/System temperature warnings
-- 📊 **Load** - System load averages
+> `when:` is read as **Europe/Paris** wall-clock time.
 
 ## Adding New Cogs
 

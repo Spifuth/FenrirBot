@@ -33,13 +33,6 @@ def get_announcement_channel(bot: discord.Client, fallback: Optional[discord.abc
     return fallback
 
 
-def get_reports_channel(bot: discord.Client) -> Optional[discord.TextChannel]:
-    """Get the configured reports channel"""
-    if config and config.reports_channel_id:
-        return bot.get_channel(config.reports_channel_id)
-    return None
-
-
 def get_notification_mention() -> str:
     """Get the role mention string or fall back to @here"""
     if config and config.notification_role_id:
@@ -236,8 +229,8 @@ def format_uptime(seconds: int) -> str:
 def format_timestamp(dt: datetime, style: str = "relative") -> str:
     """
     Format a datetime for Discord display.
-    
-    Styles: 
+
+    Styles:
         - relative: "2 hours ago"
         - short: "12/01/2026 10:30"
         - long: "12 January 2026 at 10:30"
@@ -252,54 +245,66 @@ def format_timestamp(dt: datetime, style: str = "relative") -> str:
         return dt.strftime("%d/%m/%Y %H:%M")
 
 
+def parse_local_datetime(when: str) -> datetime:
+    """Parse 'YYYY-MM-DD HH:MM' as Paris wall-clock time; return an aware UTC datetime.
+
+    The bot runs with TZ=Europe/Paris and users type local time. Storing UTC keeps
+    the JSON round-trip and the `<t:...>` Discord timestamps unambiguous.
+    """
+    naive = datetime.strptime(when, "%Y-%m-%d %H:%M")
+    return naive.replace(tzinfo=PARIS_TZ).astimezone(timezone.utc)
+
+
+def format_paris(dt: datetime, fmt: str) -> str:
+    """Render an aware datetime in Paris local time."""
+    return dt.astimezone(PARIS_TZ).strftime(fmt)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Error Handling Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def create_error_embed(
-    title: str = "❌ Erreur",
+    title: str = "Erreur",
     description: str = "Une erreur est survenue.",
-    error: Optional[Exception] = None
+    error: Exception | None = None,
 ) -> discord.Embed:
     """Create a standardized error embed"""
     embed = discord.Embed(
         title=title,
         description=description,
-        color=0xFF4444,
-        timestamp=datetime.now()
+        color=0x2C2F33,
+        timestamp=datetime.now(timezone.utc),
     )
-    
     if error:
-        error_msg = str(error)[:200]
-        embed.add_field(name="Détails", value=f"```\n{error_msg}\n```", inline=False)
-    
-    embed.set_footer(text="🐺 Fenrir")
+        embed.add_field(name="Détails", value=f"```\n{str(error)[:200]}\n```", inline=False)
+    embed.set_footer(text="Fenrir")
     return embed
 
 
 def create_success_embed(
-    title: str = "✅ Succès",
-    description: str = "Opération réussie."
+    title: str = "Succès",
+    description: str = "Opération réussie.",
 ) -> discord.Embed:
     """Create a standardized success embed"""
     return discord.Embed(
         title=title,
         description=description,
-        color=0x44FF44,
-        timestamp=datetime.now()
+        color=0x2C2F33,
+        timestamp=datetime.now(timezone.utc),
     )
 
 
 def create_info_embed(
     title: str,
-    description: str = ""
+    description: str = "",
 ) -> discord.Embed:
     """Create a standardized info embed"""
     return discord.Embed(
         title=title,
         description=description,
-        color=0x5865F2,
-        timestamp=datetime.now()
+        color=0x2C2F33,
+        timestamp=datetime.now(timezone.utc),
     )
 
 
@@ -314,14 +319,6 @@ def get_config_value(key: str, default=None):
     return default
 
 
-def is_netdata_configured() -> bool:
-    """Check if Netdata is properly configured"""
-    return bool(get_config_value('netdata_url', ''))
-
-
-def is_uptimekuma_configured() -> bool:
-    """Check if UptimeKuma is properly configured"""
-    return bool(get_config_value('uptimekuma_url', ''))
 
 
 def is_webhook_enabled() -> bool:
