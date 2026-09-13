@@ -48,7 +48,6 @@ Each cog is a `commands.Cog` subclass with an `async def setup(bot)` function. C
 - **`dashboard.py`** — `/dashboard` (Docker status overview).
 - **`reports.py`** — `/rapport`, VictoriaMetrics-backed.
 - **`alerts.py`** — `/alerts`, Grafana Alertmanager-backed.
-- **`server_config.py`** — `/server-config validate|diff|apply|export`, `webhooks reveal`. Declarative guild reconciliation from `specs/server-spec.yaml`.
 
 **Permissions:** every command except `/ping` is gated by `admin_only()` from `src/utils/permissions.py`, which applies both `default_permissions` and a runtime `has_permissions` check.
 
@@ -69,7 +68,6 @@ JSON files managed directly by cogs:
 - `data/scheduled_maintenances.json` — Pending scheduled maintenances (survives bot restarts)
 - `data/containers.json` — Docker container cache
 - `data/open_incidents.json` — Open incident announcements (`IncidentStore`), so buttons survive a restart
-- `data/server_config_state.json` — `/server-config` webhook and reaction-binding state
 
 ### Adding a new cog
 

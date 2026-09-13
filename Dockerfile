@@ -18,7 +18,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY src/ ./src/
-COPY specs/ ./specs/
 COPY run.py .
 
 # Run as an unprivileged user. This process holds the Discord token and talks
