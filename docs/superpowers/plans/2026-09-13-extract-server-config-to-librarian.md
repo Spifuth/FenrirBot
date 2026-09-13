@@ -14,7 +14,7 @@
 
 - **Source of truth for lifted files is FenrirBot at commit `7769780` (branch `dev`).** Copy byte-for-byte; do not reformat, rename, or "improve" during the lift.
 - Python **3.12**. Container user **uid 10001**. Image tag **`librarian:latest`**.
-- Repo is **private**, default branch `main`, integration branch `dev`. Feature branches PR into `dev` — never commit directly to `dev` or `main`.
+- Repo is **private**, default branch `main`, integration branch `dev`. **All work in Tasks 1-5 happens on the branch `feat/lift-server-config`**, which PRs into `dev`. Only the repo-genesis placeholder commit touches `main` directly.
 - Git identity for every commit: `-c user.name=Spifuth -c user.email=Github.spifuth@gmail.com`. Do not touch global git config.
 - Discord-facing strings stay **French**; Python code, comments and docstrings stay **English**.
 - **No secrets in the repo.** Config comes from env vars, injected by Infisical at deploy time.
@@ -46,7 +46,19 @@ mkdir -p /srv/project/python/the-librarian
 cd /srv/project/python/the-librarian
 git init -q -b main
 git remote add origin https://github.com/Spifuth/the-librarian.git
+
+# Repo genesis: main needs one commit before dev can branch from it, and dev
+# before a feature branch can PR into it. Seed main with a placeholder, then
+# do ALL of tasks 1-5 on the feature branch.
+printf '# The Librarian\n' > README.md
+git -c user.name=Spifuth -c user.email=Github.spifuth@gmail.com add README.md
+git -c user.name=Spifuth -c user.email=Github.spifuth@gmail.com commit -q -m "chore: initial commit"
+git branch dev
+git checkout -q -b feat/lift-server-config dev
 ```
+
+Every commit in Tasks 1-5 lands on `feat/lift-server-config`. `README.md` is
+overwritten with its real content in Task 5.
 
 - [ ] **Step 2: Copy repo hygiene files from FenrirBot verbatim**
 
@@ -840,9 +852,12 @@ git -c user.name=Spifuth -c user.email=Github.spifuth@gmail.com add -A
 git -c user.name=Spifuth -c user.email=Github.spifuth@gmail.com commit -m "docs: README, CLAUDE.md, CI workflow and env template
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
-git push -u origin main
-git branch dev main
-git push -u origin dev
+git push origin main
+git push origin dev
+git push -u origin feat/lift-server-config
+gh pr create --base dev --head feat/lift-server-config \
+  --title "feat: The Librarian — server_config lifted out of FenrirBot" \
+  --body "Extraction per docs/superpowers/specs/2026-09-13-extract-server-config-to-librarian.md in the FenrirBot repo. FenrirBot's server_config test suite passes here unchanged, which is the signal the lift changed nothing. Deployment and cutover are Task 6, blocked on a Discord bot token."
 ```
 
 - [ ] **Step 7: Report the deployment prerequisites**
