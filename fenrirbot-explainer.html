@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FenrirBot — Architecture Explainer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    @keyframes ping {
+      75%, 100% { transform: scale(2.2); opacity: 0; }
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.25; }
+    }
+    @keyframes slide-in {
+      from { transform: translateY(-8px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+    @keyframes chevron-pulse {
+      from { opacity: 0.12; color: #1e293b; }
+      to   { opacity: 1;    color: #60a5fa; }
+    }
+    @keyframes glow-border {
+      0%, 100% { box-shadow: 0 0 0px transparent; }
+      50%       { box-shadow: 0 0 8px var(--glow-color, #60a5fa44); }
+    }
+    @keyframes embed-drop {
+      from { transform: translateY(6px) scale(0.97); opacity: 0; }
+      to   { transform: translateY(0)   scale(1);    opacity: 1; }
+    }
+    @keyframes step-reveal {
+      from { transform: translateX(-6px); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+    @keyframes wolf-pulse {
+      0%, 100% { text-shadow: 0 0 0px transparent; }
+      50%       { text-shadow: 0 0 20px #a855f755; }
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: #090e16;
+      color: #f1f5f9;
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 24px 16px 48px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ── Typography ── */
+    .eyebrow {
+      font-size: 11px;
+      color: #475569;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 40px;
+      color: #f1f5f9;
+      line-height: 1;
+      animation: wolf-pulse 4s ease-in-out infinite;
+    }
+    .subtitle {
+      font-size: 11px;
+      color: #475569;
+      letter-spacing: 0.05em;
+      margin-top: 5px;
+    }
+    .panel-label {
+      font-size: 9px;
+      color: #64748b;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 7px;
+    }
+
+    /* ── Panels ── */
+    .panel {
+      background: #0d1520;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 11px 13px;
+    }
+    .panel-sm {
+      background: #0d1520;
+      border: 1px solid #1e293b;
+      border-radius: 7px;
+      padding: 7px 9px;
+    }
+
+    /* ── Status badge ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px;
+      border-radius: 100px;
+      font-size: 10px;
+      letter-spacing: 0.07em;
+      transition: all 0.4s ease;
+      border: 1px solid #1e293b;
+    }
+
+    /* ── Pulsing dot ── */
+    .dot-wrap {
+      position: relative;
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      flex-shrink: 0;
+    }
+    .dot-ping {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      opacity: 0.4;
+      animation: ping 1.3s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    .dot-solid {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+    }
+
+    /* ── 3-panel diagram ── */
+    .main-diagram {
+      display: grid;
+      grid-template-columns: 1fr 18px 1fr 18px 1fr;
+      align-items: start;
+      gap: 0;
+    }
+    .diagram-col {
+      background: #070c15;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 8px 7px;
+      min-height: 148px;
+    }
+    .diagram-col.busy {
+      border-color: var(--busy-color, #1e293b);
+      animation: glow-border 1.8s ease-in-out infinite;
+    }
+    .arrows-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding-top: 54px;
+      gap: 3px;
+    }
+    .chevron {
+      font-size: 11px;
+      color: #1e293b;
+      line-height: 1;
+      transition: color 0.3s ease;
+    }
+    .chevron.active {
+      color: #60a5fa;
+      animation: chevron-pulse 0.8s ease-in-out infinite alternate;
+    }
+    .chevron:nth-child(2).active { animation-delay: 0.15s; }
+    .chevron:nth-child(3).active { animation-delay: 0.30s; }
+
+    /* ── Entity cards ── */
+    .entity-card {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 5px;
+      padding: 4px 6px;
+      font-size: 9px;
+      margin-bottom: 3px;
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transform: translateX(-18px);
+      opacity: 0;
+    }
+    .entity-card.visible {
+      transform: translateX(0);
+      opacity: 1;
+    }
+
+    /* ── Fenrir step cards ── */
+    .step-card {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 9px;
+      margin-bottom: 3px;
+      border: 1px solid transparent;
+      opacity: 0;
+      animation: step-reveal 0.3s ease forwards;
+    }
+    .step-num {
+      font-size: 8px;
+      opacity: 0.5;
+    }
+
+    /* ── Discord embed ── */
+    .discord-embed {
+      border-left: 3px solid;
+      background: #0a0f1a;
+      border-radius: 0 4px 4px 0;
+      padding: 6px 8px 7px;
+      animation: embed-drop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    .discord-embed-title {
+      font-size: 10px;
+      font-weight: 700;
+      margin-bottom: 3px;
+      line-height: 1.3;
+    }
+    .discord-embed-body {
+      font-size: 8px;
+      color: #94a3b8;
+      line-height: 1.55;
+      white-space: pre-line;
+    }
+    .discord-footer {
+      font-size: 8px;
+      color: #334155;
+      margin-top: 5px;
+    }
+    .mention-tag {
+      font-size: 8px;
+      background: #3b82f620;
+      color: #60a5fa;
+      padding: 1px 4px;
+      border-radius: 3px;
+      margin-bottom: 4px;
+      display: inline-block;
+    }
+    .metric-bar {
+      font-size: 8px;
+      letter-spacing: 0;
+      margin-top: 2px;
+    }
+
+    /* ── Processing dots ── */
+    .proc-dots {
+      display: flex;
+      gap: 3px;
+      margin-top: 5px;
+    }
+    .proc-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      animation: blink 0.9s ease-in-out infinite;
+    }
+
+    /* ── Completed chips ── */
+    .chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-height: 22px;
+    }
+    .chip {
+      padding: 2px 7px;
+      border-radius: 100px;
+      font-size: 9px;
+      border: 1px solid;
+      animation: slide-in 0.25s ease forwards;
+    }
+
+    /* ── Event log ── */
+    .log-entry {
+      display: flex;
+      gap: 7px;
+      font-size: 9px;
+      padding: 2px 0;
+      border-bottom: 1px solid #0f1825;
+      animation: slide-in 0.2s ease forwards;
+      line-height: 1.4;
+    }
+    .log-time { color: #2d3d52; flex-shrink: 0; }
+
+    /* ── Tags ── */
+    .tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag {
+      background: #0a1020;
+      border: 1px solid #1a2535;
+      color: #334155;
+      font-size: 9px;
+      padding: 3px 9px;
+      border-radius: 100px;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      font-size: 9px;
+      color: #1e293b;
+      text-align: center;
+      letter-spacing: 0.05em;
+      padding-top: 4px;
+    }
+
+    /* ── Placeholder text ── */
+    .placeholder {
+      font-size: 9px;
+      color: #1e293b;
+      text-align: center;
+      padding: 18px 0 10px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ① Eyebrow + Title + Subtitle -->
+  <div>
+    <div class="eyebrow">DISCORD BOT · HOMELAB MONITORING</div>
+    <div class="title">🐺 Fenrir</div>
+    <div class="subtitle">monitoring stack → webhook → cog router → discord embed</div>
+  </div>
+
+  <!-- ② Status badge -->
+  <div>
+    <span class="badge" id="status-badge">
+      <span class="dot-wrap">
+        <span class="dot-ping" id="badge-ping" style="background:#475569"></span>
+        <span class="dot-solid" id="badge-solid" style="background:#475569"></span>
+      </span>
+      <span id="badge-text" style="color:#475569">IDLE — WAITING</span>
+    </span>
+  </div>
+
+  <!-- ③ Main 3-panel diagram -->
+  <div class="panel">
+    <div class="panel-label">signal flow</div>
+    <div class="main-diagram">
+
+      <!-- Sources panel -->
+      <div class="diagram-col" id="col-sources">
+        <div class="panel-label" style="color:#475569">sources</div>
+        <div id="sources-list">
+          <div class="placeholder">no signals...</div>
+        </div>
+      </div>
+
+      <!-- Arrows 1 -->
+      <div class="arrows-col" id="arrows-1">
+        <span class="chevron">›</span>
+        <span class="chevron">›</span>
+        <span class="chevron">›</span>
+      </div>
+
+      <!-- Fenrir Core panel -->
+      <div class="diagram-col" id="col-fenrir">
+        <div class="panel-label" style="color:#a855f7">fenrir core</div>
+        <div id="fenrir-steps">
+          <div class="placeholder">idle</div>
+        </div>
+      </div>
+
+      <!-- Arrows 2 -->
+      <div class="arrows-col" id="arrows-2">
+        <span class="chevron">›</span>
+        <span class="chevron">›</span>
+        <span class="chevron">›</span>
+      </div>
+
+      <!-- Discord panel -->
+      <div class="diagram-col" id="col-discord">
+        <div class="panel-label" style="color:#3b82f6">#alerts-bot</div>
+        <div id="discord-content">
+          <div class="placeholder">awaiting...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ Detail panel — currently processing -->
+  <div class="panel" style="min-height:52px;">
+    <div class="panel-label">currently routing</div>
+    <div id="processing-detail" style="font-size:10px;color:#334155;">—</div>
+  </div>
+
+  <!-- ⑤ Completed chips -->
+  <div class="panel">
+    <div class="panel-label">dispatched to discord</div>
+    <div class="chips-row" id="chips-row">
+      <span style="font-size:9px;color:#1e293b">none yet...</span>
+    </div>
+  </div>
+
+  <!-- ⑥ Event log -->
+  <div class="panel">
+    <div class="panel-label">event log</div>
+    <div id="event-log"></div>
+  </div>
+
+  <!-- ⑦ Tech tags -->
+  <div class="tags">
+    <span class="tag">discord.py</span>
+    <span class="tag">aiohttp webhook</span>
+    <span class="tag">Grafana alerts</span>
+    <span class="tag">Prometheus AM</span>
+    <span class="tag">Docker SDK</span>
+    <span class="tag">slash commands</span>
+    <span class="tag">asyncio cogs</span>
+    <span class="tag">30s bg loop</span>
+    <span class="tag">personality engine</span>
+  </div>
+
+  <!-- ⑩ Footer -->
+  <div class="footer">🐺 FenrirBot · discord.py · homelab infra monitoring</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════════
+
+const EVENT_TYPES = [
+  {
+    type: "grafana.alert",
+    label: "Grafana Alert",
+    dot: "#f97316", color: "#fb923c",
+    sourceLabel: "Grafana",
+    routeLabel: "POST /webhook/grafana",
+    steps: ["verify Bearer token", "parse unified alert", "build metric bar", "send embed"],
+    discordTitle: "⚠️ [WARNING] CPU Usage High",
+    discordBody: "Instance: homelab-01\nValue: 🟨🟨🟨🟨🟨🟨🟨🟨⬜⬜ 87.3% [WARNING]",
+    discordSource: "Grafana",
+  },
+  {
+    type: "prom.firing",
+    label: "Prom FIRING",
+    dot: "#ef4444", color: "#f87171",
+    sourceLabel: "Prometheus",
+    routeLabel: "POST /webhook/prometheus",
+    steps: ["verify Bearer token", "parse alertmanager", "loop alerts[]", "send embed"],
+    discordTitle: "🚨 [CRITICAL] Disk Almost Full",
+    discordBody: "Job: node-exporter\nInstance: nas-01\n💾 🟥🟥🟥🟥🟥🟥🟥🟥🟥⬜ 92.0% CRITICAL",
+    discordSource: "Prometheus",
+  },
+  {
+    type: "slash.downtime",
+    label: "/downtime cmd",
+    dot: "#3b82f6", color: "#60a5fa",
+    sourceLabel: "User (Discord)",
+    routeLabel: "slash cmd → downtime cog",
+    steps: ["discord API event", "downtime.py cog", "build DowntimeEmbed", "start incident thread"],
+    discordTitle: "🔧 Maintenance en cours",
+    discordBody: "Service: Jellyfin\nDurée: 30 minutes\nStatus: 🔧 en cours",
+    discordSource: "Slash Command",
+  },
+  {
+    type: "docker.event",
+    label: "Docker Event",
+    dot: "#14b8a6", color: "#2dd4bf",
+    sourceLabel: "Docker Daemon",
+    routeLabel: "docker cog (5m refresh)",
+    steps: ["docker SDK poll", "detect container Δ", "update cache", "refresh dashboard"],
+    discordTitle: "🐳 Container Restarted",
+    discordBody: "Container: traefik\nStatus: healthy ✅\nUptime: 2s",
+    discordSource: "Docker Cog",
+  },
+  {
+    type: "scheduled.maint",
+    label: "Sched. Maint.",
+    dot: "#a855f7", color: "#c084fc",
+    sourceLabel: "Cron (30s loop)",
+    routeLabel: "downtime cog bg task",
+    steps: ["bg loop tick (30s)", "load JSON store", "check due time", "auto-trigger alert"],
+    discordTitle: "📅 Maintenance programmée",
+    discordBody: "Service: Nextcloud\nHeure: 03:00 (Paris)\nDurée: ~20 min",
+    discordSource: "Scheduled",
+  },
+  {
+    type: "generic.webhook",
+    label: "Generic Alert",
+    dot: "#22c55e", color: "#4ade80",
+    sourceLabel: "External (generic)",
+    routeLabel: "POST /webhook/generic",
+    steps: ["verify token", "parse severity", "add emoji", "send embed"],
+    discordTitle: "✅ Backup Complete",
+    discordBody: "Service: restic\nSeverity: success\nSize: 2.3 GB",
+    discordSource: "Generic Webhook",
+  },
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+
+let queue     = [];
+let busy      = false;
+let completed = [];
+let logEntries = [];
+let counter   = 0;
+let phase     = "idle";
+
+// ═══════════════════════════════════════════════════════════════════
+// DOM REFS
+// ═══════════════════════════════════════════════════════════════════
+
+const $badge       = document.getElementById("status-badge");
+const $badgeText   = document.getElementById("badge-text");
+const $badgePing   = document.getElementById("badge-ping");
+const $badgeSolid  = document.getElementById("badge-solid");
+const $sourcesList = document.getElementById("sources-list");
+const $fenrirSteps = document.getElementById("fenrir-steps");
+const $colFenrir   = document.getElementById("col-fenrir");
+const $discordContent = document.getElementById("discord-content");
+const $processing  = document.getElementById("processing-detail");
+const $chipsRow    = document.getElementById("chips-row");
+const $log         = document.getElementById("event-log");
+const $arrows1     = document.getElementById("arrows-1");
+const $arrows2     = document.getElementById("arrows-2");
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+function nowStr() {
+  return new Date().toTimeString().slice(0, 8);
+}
+
+function createEvent() {
+  const t = EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)];
+  return { ...t, id: ++counter, createdAt: Date.now() };
+}
+
+function addLog(text, color) {
+  logEntries = [{ text, color, ts: nowStr(), key: Date.now() + Math.random() }, ...logEntries].slice(0, 12);
+  renderLog();
+}
+
+function setPhase(p) {
+  phase = p;
+  const PHASES = {
+    producing:  { label: "PRODUCING...",           color: "#60a5fa" },
+    burst:      { label: "⚡ BURST MODE",          color: "#f97316" },
+    processing: { label: "WORKER PROCESSING...",   color: "#22c55e" },
+    idle:       { label: "IDLE — WAITING",         color: "#475569" },
+  };
+  const ph = PHASES[p] || PHASES.idle;
+  $badgeText.textContent = ph.label;
+  $badgeText.style.color = ph.color;
+  $badge.style.background = ph.color + "12";
+  $badge.style.borderColor = ph.color + "55";
+  $badgePing.style.background  = ph.color;
+  $badgeSolid.style.background = ph.color;
+}
+
+function setArrows(el, active) {
+  el.querySelectorAll(".chevron").forEach((ch, i) => {
+    if (active) {
+      ch.classList.add("active");
+      ch.style.animationDelay = `${i * 0.15}s`;
+    } else {
+      ch.classList.remove("active");
+      ch.style.animationDelay = "0s";
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════════
+
+function renderSources() {
+  if (queue.length === 0) {
+    $sourcesList.innerHTML = '<div class="placeholder">no signals...</div>';
+    return;
+  }
+  const shown    = queue.slice(0, 4);
+  const overflow = queue.length - shown.length;
+
+  $sourcesList.innerHTML = "";
+  shown.forEach((e, idx) => {
+    const card = document.createElement("div");
+    card.className = "entity-card";
+    card.style.background = e.dot + "18";
+    card.style.border      = `1px solid ${e.dot}44`;
+    card.style.color       = e.color;
+    card.innerHTML = `
+      <div class="dot-wrap">
+        <div class="dot-ping"  style="background:${e.dot}"></div>
+        <div class="dot-solid" style="background:${e.dot}"></div>
+      </div>
+      <span>#${e.id} ${e.label}</span>
+    `;
+    $sourcesList.appendChild(card);
+    // spring entry
+    requestAnimationFrame(() => {
+      setTimeout(() => card.classList.add("visible"), idx * 40);
+    });
+  });
+
+  if (overflow > 0) {
+    const more = document.createElement("div");
+    more.style.cssText = "font-size:9px;color:#475569;padding:2px 6px;";
+    more.textContent = `+${overflow} more...`;
+    $sourcesList.appendChild(more);
+  }
+}
+
+function renderFenrirSteps(entity) {
+  if (!entity) {
+    $fenrirSteps.innerHTML = '<div class="placeholder">idle</div>';
+    $colFenrir.classList.remove("busy");
+    $colFenrir.style.removeProperty("--busy-color");
+    $colFenrir.style.borderColor = "";
+    return;
+  }
+
+  $colFenrir.style.setProperty("--glow-color", entity.dot + "40");
+  $colFenrir.style.borderColor = entity.dot + "55";
+
+  $fenrirSteps.innerHTML = "";
+  entity.steps.forEach((step, i) => {
+    const card = document.createElement("div");
+    card.className = "step-card";
+    card.style.background = entity.dot + "15";
+    card.style.borderColor = entity.dot + "33";
+    card.style.color       = entity.color;
+    card.style.animationDelay = `${i * 280}ms`;
+    card.innerHTML = `<span class="step-num">${i + 1}</span><span>${step}</span>`;
+    $fenrirSteps.appendChild(card);
+  });
+}
+
+function renderDiscord(entity) {
+  if (!entity) {
+    $discordContent.innerHTML = '<div class="placeholder">awaiting...</div>';
+    return;
+  }
+
+  $discordContent.innerHTML = `
+    <div style="margin-bottom:5px;">
+      <span class="mention-tag">@role</span>
+      <span style="font-size:8px;color:#475569;"> · ${entity.discordSource}</span>
+    </div>
+    <div class="discord-embed" style="border-left-color:${entity.dot};background:${entity.dot}0a;">
+      <div class="discord-embed-title" style="color:${entity.color};">${entity.discordTitle}</div>
+      <div class="discord-embed-body">${entity.discordBody}</div>
+      <div class="discord-footer">🔔 ${entity.discordSource} · Fenrir Webhook</div>
+    </div>
+  `;
+}
+
+function renderProcessing(entity) {
+  if (!entity) {
+    $processing.innerHTML = '<span style="color:#334155;">—</span>';
+    return;
+  }
+  $processing.innerHTML = `
+    <span style="color:${entity.color};">#${entity.id} ${entity.label}</span>
+    <span style="font-size:9px;color:#475569;"> — ${entity.routeLabel}</span>
+    <div class="proc-dots">
+      ${[0,1,2].map((_, i) => `<div class="proc-dot" style="background:${entity.dot};animation-delay:${i * 0.22}s;"></div>`).join("")}
+    </div>
+  `;
+}
+
+function renderCompleted() {
+  if (completed.length === 0) {
+    $chipsRow.innerHTML = '<span style="font-size:9px;color:#1e293b">none yet...</span>';
+    return;
+  }
+  $chipsRow.innerHTML = completed.slice(0, 7).map(e => `
+    <span class="chip" style="background:${e.dot}14;border-color:${e.dot}44;color:${e.color};">
+      #${e.id} ${e.type}
+    </span>
+  `).join("");
+}
+
+function renderLog() {
+  if (logEntries.length === 0) {
+    $log.innerHTML = "";
+    return;
+  }
+  $log.innerHTML = logEntries.map(entry => `
+    <div class="log-entry">
+      <span class="log-time">${entry.ts}</span>
+      <span style="color:${entry.color};">${entry.text}</span>
+    </div>
+  `).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SIMULATION
+// ═══════════════════════════════════════════════════════════════════
+
+function tryProcess() {
+  if (busy || queue.length === 0) {
+    if (!busy && queue.length === 0) {
+      setPhase("idle");
+      setArrows($arrows1, false);
+      setArrows($arrows2, false);
+      renderFenrirSteps(null);
+      renderProcessing(null);
+    }
+    return;
+  }
+
+  busy = true;
+  const [next, ...rest] = queue;
+  queue = rest;
+
+  setPhase("processing");
+  setArrows($arrows1, true);
+  renderSources();
+  renderFenrirSteps(next);
+  renderProcessing(next);
+  addLog(`fenrir → routing #${next.id} (${next.routeLabel})`, next.color);
+
+  const processDuration = 1500 + Math.random() * 1600;
+
+  // After halfway, light up arrow 2 + show embed
+  const embedDelay = processDuration * 0.72;
+  const embedTimer = setTimeout(() => {
+    setArrows($arrows2, true);
+    renderDiscord(next);
+    addLog(`discord ✓ #${next.id} dispatched → #alerts-bot`, "#4ade80");
+  }, embedDelay);
+
+  setTimeout(() => {
+    clearTimeout(embedTimer);
+    completed = [next, ...completed].slice(0, 7);
+    renderCompleted();
+    renderProcessing(null);
+    setArrows($arrows2, false);
+    busy = false;
+    tryProcess();
+  }, processDuration);
+}
+
+function produce() {
+  const isBurst = Math.random() < 0.28;
+
+  if (isBurst) {
+    setPhase("burst");
+    let count = 0;
+    const total = 3 + Math.floor(Math.random() * 3);
+    const iv = setInterval(() => {
+      const e = createEvent();
+      queue = [...queue, e];
+      renderSources();
+      addLog(`${e.sourceLabel} → queued #${e.id} ${e.label}`, e.color);
+      count++;
+      if (count >= total) {
+        clearInterval(iv);
+        tryProcess();
+        setTimeout(produce, 2800 + Math.random() * 2200);
+      }
+    }, 420);
+  } else {
+    setPhase("producing");
+    const e = createEvent();
+    queue = [...queue, e];
+    renderSources();
+    addLog(`${e.sourceLabel} → queued #${e.id} ${e.label}`, e.color);
+    tryProcess();
+    setTimeout(produce, 1200 + Math.random() * 1600);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+
+setPhase("idle");
+renderSources();
+renderFenrirSteps(null);
+renderDiscord(null);
+renderLog();
+renderCompleted();
+renderProcessing(null);
+
+setTimeout(produce, 900);
+</script>
+</body>
+</html>
