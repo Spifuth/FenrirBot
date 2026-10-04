@@ -27,7 +27,7 @@ def _record(started_at: str) -> IncidentRecord:
 
 
 def test_from_record_with_known_started_at_sets_start_time_to_it(tmp_path):
-    store = IncidentStore(path=tmp_path / "open_incidents.json")
+    store = IncidentStore(path=tmp_path / "fenrir.db")
     known = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     record = _record(started_at=known.isoformat())
 
@@ -37,7 +37,7 @@ def test_from_record_with_known_started_at_sets_start_time_to_it(tmp_path):
 
 
 def test_from_record_with_empty_started_at_falls_back_to_now(tmp_path):
-    store = IncidentStore(path=tmp_path / "open_incidents.json")
+    store = IncidentStore(path=tmp_path / "fenrir.db")
     record = _record(started_at="")
 
     before = datetime.now(timezone.utc)
@@ -51,7 +51,7 @@ def test_from_record_with_empty_started_at_falls_back_to_now(tmp_path):
 
 
 def test_from_record_with_malformed_started_at_does_not_raise(tmp_path):
-    store = IncidentStore(path=tmp_path / "open_incidents.json")
+    store = IncidentStore(path=tmp_path / "fenrir.db")
     record = _record(started_at="not-a-date")
 
     before = datetime.now(timezone.utc)
@@ -67,7 +67,7 @@ def test_from_record_with_naive_started_at_is_coerced_to_utc(tmp_path):
     # but yields a naive datetime. restore_button later computes
     # datetime.now(timezone.utc) - self.start_time, which raises TypeError
     # unless from_record coerces it to aware UTC first.
-    store = IncidentStore(path=tmp_path / "open_incidents.json")
+    store = IncidentStore(path=tmp_path / "fenrir.db")
     record = _record(started_at="2026-01-01T12:00:00")
 
     view = DowntimeView.from_record(record, store)

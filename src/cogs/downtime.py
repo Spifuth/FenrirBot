@@ -1,12 +1,10 @@
 """Downtime announcement commands"""
 
 import discord
-import json
 from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
-from pathlib import Path
 
 from ..config import config
 from ..utils.embeds import DowntimeEmbed, ServiceType, MaintenanceType
@@ -14,6 +12,7 @@ from ..utils.docker import docker_manager
 from ..utils.views import DowntimeView
 from ..utils.incidents import IncidentRecord, incident_store
 from ..utils.permissions import admin_only
+from ..utils.state_db import ScheduledStore
 from ..utils.helpers import (
     get_announcement_channel,
     get_notification_mention,
@@ -61,8 +60,8 @@ class ScheduledMaintenance:
         )
 
 
-# Path to the scheduled maintenances JSON file
-SCHEDULED_FILE = Path(__file__).parent.parent.parent / "data" / "scheduled_maintenances.json"
+# The scheduled_maintenances table of data/fenrir.db
+scheduled_store = ScheduledStore()
 
 
 class DowntimeCog(commands.Cog, name="Downtime"):
@@ -81,31 +80,22 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         self.check_scheduled_maintenances.cancel()
     
     def _load_scheduled_maintenances(self):
-        """Load scheduled maintenances from JSON file"""
-        if SCHEDULED_FILE.exists():
-            try:
-                with open(SCHEDULED_FILE, "r") as f:
-                    data = json.load(f)
-                self._scheduled_maintenances = [
-                    ScheduledMaintenance.from_dict(m) for m in data
-                ]
-                print(f"[Downtime] Loaded {len(self._scheduled_maintenances)} scheduled maintenance(s)")
-            except Exception as e:
-                print(f"[Downtime] Error loading scheduled maintenances: {e}")
-                self._scheduled_maintenances = []
-    
-    def _save_scheduled_maintenances(self):
-        """Save scheduled maintenances to JSON file"""
+        """Load scheduled maintenances from the state database"""
         try:
-            SCHEDULED_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(SCHEDULED_FILE, "w") as f:
-                json.dump(
-                    [m.to_dict() for m in self._scheduled_maintenances],
-                    f,
-                    indent=2
-                )
+            self._scheduled_maintenances = [
+                ScheduledMaintenance.from_dict(m) for m in scheduled_store.load()
+            ]
+            print(f"[Downtime] Loaded {len(self._scheduled_maintenances)} scheduled maintenance(s)")
         except Exception as e:
-            print(f"[Downtime] Error saving scheduled maintenances: {e}")
+            print(f"[Downtime] Error loading scheduled maintenances: {e!r}")
+            self._scheduled_maintenances = []
+
+    def _save_scheduled_maintenances(self):
+        """Replace the stored queue with the in-memory one, atomically"""
+        try:
+            scheduled_store.save([m.to_dict() for m in self._scheduled_maintenances])
+        except Exception as e:
+            print(f"[Downtime] Error saving scheduled maintenances: {e!r}")
     
     # An entry whose channel never comes back would otherwise sit in the queue
     # forever, logging on every tick. Give up on it once it is this far overdue.
