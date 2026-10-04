@@ -88,6 +88,5 @@ Discord-facing messages (command descriptions, announcements, responses) are pri
 | `VICTORIAMETRICS_URL` | VictoriaMetrics base URL (e.g. `http://victoriametrics:8428`). |
 | `GRAFANA_URL` | Grafana base URL (e.g. `http://grafana:3000`). |
 | `GRAFANA_API_KEY` | Grafana service account token (Viewer role). |
-| `REPORTS_CHANNEL_ID` | **Dead config** — read by `Config` but no cog uses it. |
 
 The `WEBHOOK_*` variables are not set in the deployed compose; the webhook server is dead code.
