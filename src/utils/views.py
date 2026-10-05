@@ -130,7 +130,10 @@ class DowntimeView(ui.View):
         else:
             duration_text = f"{seconds}s"
 
-        button.disabled = True
+        # Disable Cancel too: stop() below unregisters the view, so a click on
+        # a still-enabled Cancel would fail with "This interaction failed".
+        for child in self.children:
+            child.disabled = True
         button.label = f"✅ Restored after {duration_text}"
         button.style = discord.ButtonStyle.gray
 

@@ -86,6 +86,15 @@ def test_restore_by_the_author_runs_the_full_close_sequence():
     assert view.resolved is True and view.is_finished()
 
 
+def test_restore_also_disables_cancel_on_the_stopped_view():
+    view, inter, _ = _click("restore_button")
+
+    # stop() unregisters the view, so an enabled Cancel left on the message
+    # would answer a click with "This interaction failed".
+    assert view.cancel_button.disabled is True
+    assert all(child.disabled for child in inter.log.of("message.edit")[0]["view"].children)
+
+
 def test_restore_on_a_revived_view_posts_in_the_clicked_channel_and_skips_the_thread():
     _, inter, store = _click("restore_button", revived=True, started_ago=timedelta(seconds=42))
 

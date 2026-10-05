@@ -60,7 +60,7 @@ def make_cog(monkeypatch, bot=None, store=None, containers=("traefik", "grafana"
 
 
 def scheduled(service="traefik", minutes_from_now=60.0, duration="Inconnue",
-              maintenance_type="update", reason="test reason"):
+              maintenance_type="update", reason="test reason", mention=True):
     return ScheduledMaintenance(
         service=service,
         scheduled_time=datetime.now(timezone.utc) + timedelta(minutes=minutes_from_now),
@@ -69,6 +69,7 @@ def scheduled(service="traefik", minutes_from_now=60.0, duration="Inconnue",
         author_id=1,
         channel_id=2,
         maintenance_type=maintenance_type,
+        mention=mention,
     )
 
 
@@ -173,6 +174,19 @@ def test_maintenance_without_mention_and_with_an_explicit_service_type(monkeypat
     assert field(sent["embed"], "Durée estimée") == "```\nInconnue\n```"
 
 
+def test_maintenance_with_a_parseable_duration_arms_the_reminder(monkeypatch):
+    cog = make_cog(monkeypatch)
+    inter = FakeInteraction()
+
+    asyncio.run(DowntimeCog.maintenance_slash.callback(
+        cog, inter, service="traefik", maintenance_type="update", reason="r",
+        duration="30 minutes",
+    ))
+
+    assert inter.log.of("channel.send")[0]["view"].timer_task is not None, \
+        "the 'estimated duration has elapsed' reminder must fire for /maintenance too"
+
+
 def test_maintenance_still_posts_when_the_incident_store_is_unwritable(monkeypatch):
     cog = make_cog(monkeypatch, store=FakeIncidentStore(raise_on={"add"}))
     inter = FakeInteraction()
@@ -231,13 +245,10 @@ def test_scheduled_announces_queues_and_saves_a_future_maintenance(monkeypatch):
     assert field(embed, "⏰ Déclenchement auto").endswith(f"<t:{int(expected.timestamp())}:F>")
 
     [m] = cog._scheduled_maintenances
-    # channel_id is deliberately not asserted: it stores the *invoking*
-    # channel, while the pre-announcement goes to the announcement channel.
-    # Whether the trigger should follow is an open question, not pinned here.
     assert (m.service, m.scheduled_time, m.duration, m.reason) == (
         "traefik", expected, "2 heures", "Montée de version",
     )
-    assert (m.author_id, m.maintenance_type, m.announced) == (7, "update", False)
+    assert (m.author_id, m.maintenance_type, m.announced, m.mention) == (7, "update", False, True)
     assert cog.saves == 1
     reply = inter.log.of("response.send_message")[0]
     assert "1 maintenance(s) planifiée(s)" in reply["content"]
@@ -254,6 +265,23 @@ def test_scheduled_without_mention_posts_no_ping(monkeypatch):
     ))
 
     assert inter.log.of("channel.send")[0]["content"] is None
+    [m] = cog._scheduled_maintenances
+    assert m.mention is False, "mention:false must reach the fire-time ping too"
+
+
+def test_scheduled_queues_the_announcement_channel_not_the_invoking_one(monkeypatch):
+    cog = make_cog(monkeypatch)
+    inter = FakeInteraction(channel_id=2)
+    announcements = FakeChannel(inter.log, channel_id=55)
+    monkeypatch.setattr(downtime_module, "get_announcement_channel", lambda bot, fallback: announcements)
+
+    asyncio.run(DowntimeCog.scheduled_slash.callback(
+        cog, inter, service="traefik", when="2099-01-15 22:00", duration="1h", reason="r",
+    ))
+
+    assert inter.log.of("channel.send")[0]["channel"] == 55
+    [m] = cog._scheduled_maintenances
+    assert m.channel_id == 55, "the fire-time ping must land where the pre-announcement did"
 
 
 # ── /scheduled-list and /scheduled-cancel ──────────────────────────────────
@@ -387,6 +415,19 @@ def test_late_maintenance_says_so_in_the_ping_and_the_thread(monkeypatch):
     content = log.of("channel.send")[0]["content"]
     assert content == "@here ⚠️ **Maintenance planifiée (retard 30min - bot hors ligne)**"
     assert "triggered late because the bot was offline" in log.of("thread.send")[0]["content"]
+
+
+def test_due_maintenance_scheduled_without_mention_does_not_ping(monkeypatch):
+    cog, log, _, _ = _trigger_setup(monkeypatch)
+
+    asyncio.run(cog._trigger_scheduled_downtime(scheduled("traefik", minutes_from_now=-1, mention=False)))
+    asyncio.run(cog._trigger_scheduled_downtime(
+        scheduled("traefik", minutes_from_now=-30, mention=False), is_catchup=True,
+    ))
+
+    on_time, late = (c["content"] for c in log.of("channel.send"))
+    assert on_time == "⏰ **Maintenance planifiée démarrant maintenant!**"
+    assert late == "⚠️ **Maintenance planifiée (retard 30min - bot hors ligne)**"
 
 
 def test_due_maintenance_with_a_parseable_duration_arms_the_reminder(monkeypatch):
