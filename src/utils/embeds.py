@@ -183,10 +183,11 @@ class DashboardEmbed:
             lines = []
             for c in running[:12]:
                 suffix = ""
-                if "healthy" in c.status.lower():
-                    suffix = " ok"
-                elif "unhealthy" in c.status.lower():
+                status = c.status.lower()
+                if "unhealthy" in status:
                     suffix = " err"
+                elif "healthy" in status:
+                    suffix = " ok"
                 lines.append(f"{c.display_name}{suffix}")
             if len(running) > 12:
                 lines.append(f"+{len(running) - 12} autres")
