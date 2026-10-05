@@ -45,7 +45,8 @@ def test_first_open_imports_every_scheduled_maintenance_in_order(data_dir):
     rows = ScheduledStore(data_dir / "fenrir.db").load()
 
     assert [r["service"] for r in rows] == ["svc-alpha", "stack-beta", "svc-gamma"]
-    assert rows[0] == _fixture("scheduled_maintenances.json")[0]
+    # The JSON era predates `mention`; every imported entry keeps pinging, as it did then.
+    assert rows[0] == {**_fixture("scheduled_maintenances.json")[0], "mention": True}
 
 
 def test_imported_rows_rebuild_into_the_same_maintenances_the_json_held(data_dir):
@@ -162,7 +163,36 @@ def test_the_schema_version_is_recorded(data_dir):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == state_db.SCHEMA_VERSION
 
 
+def test_a_version_1_db_gains_the_mention_column_and_keeps_its_rows(tmp_path):
+    db = tmp_path / "fenrir.db"
+    with sqlite3.connect(db) as conn:
+        for statement in state_db._SCHEMA:
+            conn.execute(statement)
+        conn.execute(
+            "INSERT INTO scheduled_maintenances (service, scheduled_time, duration, reason, "
+            "author_id, channel_id, maintenance_type, announced) "
+            "VALUES ('svc', '2099-01-01T00:00:00+00:00', '1h', 'r', 1, 2, 'update', 0)"
+        )
+        conn.execute("PRAGMA user_version = 1")
+
+    [row] = ScheduledStore(db).load()
+
+    assert row["service"] == "svc" and row["mention"] is True
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == state_db.SCHEMA_VERSION
+
+
 # ── steady state: the scheduled store ──────────────────────────────────────
+
+def test_mention_false_survives_a_save_and_load(tmp_path):
+    store = ScheduledStore(tmp_path / "fenrir.db")
+    m = ScheduledMaintenance.from_dict({**_fixture("scheduled_maintenances.json")[0], "mention": False})
+
+    store.save([m.to_dict()])
+
+    assert [ScheduledMaintenance.from_dict(d) for d in store.load()] == [m]
+    assert store.load()[0]["mention"] is False
+
 
 def test_save_replaces_the_whole_queue_and_keeps_its_order(tmp_path):
     store = ScheduledStore(tmp_path / "fenrir.db")

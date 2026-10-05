@@ -31,7 +31,7 @@ DB_FILE = DATA_DIR / "fenrir.db"
 LEGACY_SCHEDULED = "scheduled_maintenances.json"
 LEGACY_INCIDENTS = "open_incidents.json"
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = (
     """
@@ -61,8 +61,12 @@ _SCHEMA = (
     """,
 )
 
+# Version 2: /scheduled mention:false must also silence the fire-time ping.
+# DEFAULT 1 keeps every pre-existing entry pinging, as it always did.
+_ADD_MENTION = "ALTER TABLE scheduled_maintenances ADD COLUMN mention INTEGER NOT NULL DEFAULT 1"
+
 _SCHEDULED_COLUMNS = ("service", "scheduled_time", "duration", "reason",
-                      "author_id", "channel_id", "maintenance_type", "announced")
+                      "author_id", "channel_id", "maintenance_type", "announced", "mention")
 _INCIDENT_COLUMNS = ("message_id", "channel_id", "service", "author_id",
                      "duration_str", "service_type", "maintenance_type", "started_at")
 
@@ -101,15 +105,23 @@ def _migrate(conn: sqlite3.Connection, path: Path) -> None:
         return
     with transaction(conn):
         # Re-check under the write lock: another opener may have won the race.
-        if conn.execute("PRAGMA user_version").fetchone()[0] >= SCHEMA_VERSION:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version >= SCHEMA_VERSION:
             return
-        for statement in _SCHEMA:
-            conn.execute(statement)
-        scheduled = _import_scheduled(conn, legacy_dir)
-        incidents = _import_incidents(conn, legacy_dir)
+        if version < 1:
+            for statement in _SCHEMA:
+                conn.execute(statement)
+        if version < 2:
+            conn.execute(_ADD_MENTION)
+        if version < 1:
+            scheduled = _import_scheduled(conn, legacy_dir)
+            incidents = _import_incidents(conn, legacy_dir)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-    print(f"[State] Created {path}: imported {scheduled} scheduled maintenance(s) "
-          f"and {incidents} open incident(s) from the JSON files")
+    if version < 1:
+        print(f"[State] Created {path}: imported {scheduled} scheduled maintenance(s) "
+              f"and {incidents} open incident(s) from the JSON files")
+    else:
+        print(f"[State] Migrated {path} from schema {version} to {SCHEMA_VERSION}")
 
 
 def _read_legacy(path: Path, expected: type):
@@ -141,6 +153,7 @@ def _import_scheduled(conn: sqlite3.Connection, legacy_dir: Path) -> int:
                 **entry,
                 "maintenance_type": entry.get("maintenance_type", "downtime"),
                 "announced": entry.get("announced", False),
+                "mention": entry.get("mention", True),
             }))
         except (KeyError, TypeError, ValueError) as e:
             print(f"[State] ⚠️ Skipping a malformed scheduled maintenance: {e!r}")
@@ -169,7 +182,7 @@ def _import_incidents(conn: sqlite3.Connection, legacy_dir: Path) -> int:
 def _scheduled_row(d: dict) -> tuple:
     return (str(d["service"]), str(d["scheduled_time"]), str(d["duration"]), str(d["reason"]),
             int(d["author_id"]), int(d["channel_id"]), str(d["maintenance_type"]),
-            int(bool(d["announced"])))
+            int(bool(d["announced"])), int(bool(d.get("mention", True))))
 
 
 def _incident_row(d: dict) -> tuple:
@@ -200,6 +213,7 @@ def _insert_scheduled(conn: sqlite3.Connection, rows: list[tuple]) -> None:
 def _scheduled_dict(row: sqlite3.Row) -> dict:
     d = {name: row[name] for name in _SCHEDULED_COLUMNS}
     d["announced"] = bool(d["announced"])
+    d["mention"] = bool(d["mention"])
     return d
 
 

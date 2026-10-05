@@ -31,6 +31,7 @@ class ScheduledMaintenance:
     channel_id: int
     maintenance_type: str = "downtime"
     announced: bool = False
+    mention: bool = True
     
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict"""
@@ -42,7 +43,8 @@ class ScheduledMaintenance:
             "author_id": self.author_id,
             "channel_id": self.channel_id,
             "maintenance_type": self.maintenance_type,
-            "announced": self.announced
+            "announced": self.announced,
+            "mention": self.mention,
         }
     
     @classmethod
@@ -56,7 +58,8 @@ class ScheduledMaintenance:
             author_id=data["author_id"],
             channel_id=data["channel_id"],
             maintenance_type=data.get("maintenance_type", "downtime"),
-            announced=data.get("announced", False)
+            announced=data.get("announced", False),
+            mention=data.get("mention", True),
         )
 
 
@@ -187,9 +190,9 @@ class DowntimeCog(commands.Cog, name="Downtime"):
     ) -> bool:
         """Announce a scheduled maintenance. Returns True only if it was sent."""
         channel = self.bot.get_channel(maintenance.channel_id)
-        # TextChannel or Thread: /scheduled captures interaction.channel.id with
-        # no type check, so a maintenance scheduled from inside a thread stores a
-        # thread id. Thread.send() works fine; only the incident-thread creation
+        # TextChannel or Thread: /scheduled stores the announcement channel, which
+        # falls back to interaction.channel when none is configured, so a
+        # maintenance scheduled from inside a thread can store a thread id. Thread.send() works fine; only the incident-thread creation
         # below doesn't apply there, and that's already best-effort.
         # Messageable is exactly the right test: it admits TextChannel, Thread,
         # VoiceChannel and StageChannel (all of which accept .send()) and excludes
@@ -232,7 +235,9 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             maint_type,
         )
 
-        notification_mention = get_notification_mention()
+        # /scheduled mention:false silences the fire-time ping as well.
+        notification_mention = get_notification_mention() if maintenance.mention else None
+        prefix = f"{notification_mention} " if notification_mention else ""
 
         # Create interactive view with restore button
         view = DowntimeView(
@@ -248,9 +253,9 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         # Customize message based on catchup status
         if is_catchup:
             delay_minutes = int((datetime.now(timezone.utc) - maintenance.scheduled_time).total_seconds() / 60)
-            content = f"{notification_mention} ⚠️ **Maintenance planifiée (retard {delay_minutes}min - bot hors ligne)**"
+            content = f"{prefix}⚠️ **Maintenance planifiée (retard {delay_minutes}min - bot hors ligne)**"
         else:
-            content = f"{notification_mention} ⏰ **Maintenance planifiée démarrant maintenant!**"
+            content = f"{prefix}⏰ **Maintenance planifiée démarrant maintenant!**"
         
         msg = await channel.send(
             content=content,
@@ -519,7 +524,9 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             f"*Le fil sera archivé après 24h d'inactivité*"
         )
         view.incident_thread = thread
-        
+
+        await view.start_timer()
+
         # Build response message
         response_parts = [
             f"✅ {maint_type.icon} Annonce **{maint_type.label}** envoyée pour **{service}** ({svc_type.label})",
@@ -607,7 +614,6 @@ class DowntimeCog(commands.Cog, name="Downtime"):
         )
         
         assert channel is not None
-        assert interaction.channel is not None
         await channel.send(
             content=get_notification_mention() if mention else None,
             embed=embed
@@ -620,8 +626,11 @@ class DowntimeCog(commands.Cog, name="Downtime"):
             duration=duration,
             reason=reason,
             author_id=interaction.user.id,
-            channel_id=interaction.channel.id,
-            maintenance_type=maintenance_type
+            # The announcement channel, so the fire-time ping lands next to the
+            # pre-announcement rather than wherever the command was typed.
+            channel_id=channel.id,
+            maintenance_type=maintenance_type,
+            mention=mention,
         )
         self._scheduled_maintenances.append(maintenance)
         self._save_scheduled_maintenances()
