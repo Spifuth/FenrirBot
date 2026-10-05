@@ -7,8 +7,6 @@ tasks.loop is never started.
 
 import asyncio
 
-import pytest
-
 import src.cogs.dashboard as dashboard_module
 import src.cogs.docker as docker_module
 from src.cogs.dashboard import DashboardCog
@@ -199,12 +197,6 @@ def test_dashboard_renders_running_and_stopped_columns(monkeypatch):
     assert field(embed, "Arrêtés (1)") == "```\nold\n```"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Known bug, deliberately not fixed in a test-only change: "
-    "DashboardEmbed.docker_status tests `'healthy' in status` before "
-    "`'unhealthy' in status`, and 'unhealthy' contains 'healthy', so an "
-    "unhealthy container is rendered ' ok' and the ' err' branch is dead."
-))
 def test_dashboard_flags_an_unhealthy_container_as_err(monkeypatch):
     cog = _dashboard_cog(monkeypatch, FakeDockerManager([
         _container("loki", status="Up 1 hour (unhealthy)"),
