@@ -1,4 +1,4 @@
-import json
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -8,7 +8,7 @@ from src.utils.incidents import IncidentRecord, IncidentStore
 
 @pytest.fixture
 def store(tmp_path):
-    return IncidentStore(path=tmp_path / "open_incidents.json")
+    return IncidentStore(path=tmp_path / "fenrir.db")
 
 
 def _record(message_id=111, started_at="", service="traefik"):
@@ -46,66 +46,11 @@ def test_load_returns_empty_when_file_missing(store):
     assert store.load() == {}
 
 
-def test_load_returns_empty_on_corrupt_json(store):
-    store.path.parent.mkdir(parents=True, exist_ok=True)
-    store.path.write_text("{ this is not json")
-    assert store.load() == {}
-
-
-def test_load_returns_empty_on_json_array(store):
-    # Valid JSON, wrong shape: `[]` decodes fine but has no .items().
-    store.path.parent.mkdir(parents=True, exist_ok=True)
-    store.path.write_text("[]")
-    assert store.load() == {}
-
-
-def test_load_returns_empty_on_json_null(store):
-    # Valid JSON, wrong shape: `null` decodes to None, which has no .items().
-    store.path.parent.mkdir(parents=True, exist_ok=True)
-    store.path.write_text("null")
-    assert store.load() == {}
-
-
-def test_load_returns_empty_on_invalid_utf8(store):
-    # UnicodeDecodeError is a ValueError subclass but not a JSONDecodeError;
-    # a naive `except (json.JSONDecodeError, OSError)` would miss it.
-    store.path.parent.mkdir(parents=True, exist_ok=True)
-    store.path.write_bytes(b"\xff\xfe\x00\x01not valid utf-8")
-    assert store.load() == {}
-
-
-def test_write_is_atomic_no_tmp_left_behind(store):
-    store.add(_record())
-    leftovers = list(store.path.parent.glob("*.tmp"))
-    assert leftovers == []
-    assert json.loads(store.path.read_text())["111"]["service"] == "traefik"
-
-
 def test_started_at_round_trips(store):
     recent = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
     store.add(_record(started_at=recent))
     reloaded = IncidentStore(path=store.path).load()
     assert reloaded[111].started_at == recent
-
-
-def test_load_tolerates_a_record_json_without_started_at(store):
-    # Mimics a file written by a version of this store that predates the
-    # started_at field: the dataclass default ("") must apply on load
-    # instead of raising.
-    store.path.parent.mkdir(parents=True, exist_ok=True)
-    store.path.write_text(json.dumps({
-        "111": {
-            "message_id": 111,
-            "channel_id": 222,
-            "service": "traefik",
-            "author_id": 333,
-            "duration_str": "30 minutes",
-            "service_type": "container",
-            "maintenance_type": "security",
-        }
-    }))
-    reloaded = IncidentStore(path=store.path).load()
-    assert reloaded[111].started_at == ""
 
 
 def test_remove_by_service_deletes_matching_records_case_insensitively(store):
@@ -161,16 +106,31 @@ def test_load_keeps_a_record_inside_the_ttl(store):
     assert 111 in store.load()
 
 
-def test_load_keeps_a_record_with_no_started_at():
+def test_load_keeps_a_record_with_no_started_at(store):
     # Unknown age is not evidence of staleness — keep it rather than guess.
-    import tempfile, pathlib
-    s = IncidentStore(path=pathlib.Path(tempfile.mkdtemp()) / "open_incidents.json")
-    s.add(_record(started_at=""))
-    assert 111 in s.load()
+    store.add(_record(started_at=""))
+    assert 111 in store.load()
 
 
-def test_load_keeps_a_record_with_a_malformed_started_at():
-    import tempfile, pathlib
-    s = IncidentStore(path=pathlib.Path(tempfile.mkdtemp()) / "open_incidents.json")
-    s.add(_record(started_at="not-a-date"))
-    assert 111 in s.load()
+def test_load_keeps_a_record_with_a_malformed_started_at(store):
+    store.add(_record(started_at="not-a-date"))
+    assert 111 in store.load()
+
+
+def test_a_write_prunes_stale_records_from_disk(store):
+    # load() hiding a stale record is not enough: without a prune on write
+    # the table would grow for ever, exactly as the JSON file used to.
+    old = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    store.add(_record(message_id=111, started_at=old))
+    store.add(_record(message_id=222))
+
+    with sqlite3.connect(store.path) as conn:
+        ids = [row[0] for row in conn.execute("SELECT message_id FROM open_incidents")]
+    assert ids == [222]
+
+
+def test_load_returns_empty_when_the_db_is_unreadable(store):
+    # The JSON store treated a corrupt file as "no incidents" so startup could
+    # still revive nothing and carry on; the DB-backed store keeps that.
+    store.path.write_bytes(b"this is not an sqlite file" * 100)
+    assert store.load() == {}

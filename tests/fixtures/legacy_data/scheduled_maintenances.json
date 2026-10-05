@@ -1,0 +1,30 @@
+[
+  {
+    "service": "svc-alpha",
+    "scheduled_time": "2099-03-01T21:00:00+00:00",
+    "duration": "2 heures",
+    "reason": "Mont\u00e9e de version",
+    "author_id": 100000000000000001,
+    "channel_id": 200000000000000002,
+    "maintenance_type": "update",
+    "announced": false
+  },
+  {
+    "service": "stack-beta",
+    "scheduled_time": "2099-03-02T03:30:00+00:00",
+    "duration": "30 minutes",
+    "reason": "Sauvegarde mensuelle",
+    "author_id": 100000000000000001,
+    "channel_id": 200000000000000003,
+    "maintenance_type": "backup",
+    "announced": false
+  },
+  {
+    "service": "svc-gamma",
+    "scheduled_time": "2099-03-03T12:00:00+00:00",
+    "duration": "Inconnue",
+    "reason": "Ancien format",
+    "author_id": 100000000000000004,
+    "channel_id": 200000000000000002
+  }
+]

@@ -19,7 +19,6 @@ class Config:
     webhook_port: int = 8085
     webhook_secret: str = ""
     victoriametrics_url: str = ""
-    reports_channel_id: int = 0
     grafana_url: str = ""
     grafana_api_key: str = ""
 
@@ -43,7 +42,6 @@ class Config:
             webhook_port=int(os.getenv("WEBHOOK_PORT", "8085")),
             webhook_secret=os.getenv("WEBHOOK_SECRET", ""),
             victoriametrics_url=os.getenv("VICTORIAMETRICS_URL", ""),
-            reports_channel_id=int(os.getenv("REPORTS_CHANNEL_ID", "0")),
             grafana_url=os.getenv("GRAFANA_URL", ""),
             grafana_api_key=os.getenv("GRAFANA_API_KEY", ""),
         )

@@ -210,5 +210,7 @@ __marimo__/
 data/containers.json
 data/server_stats.json
 data/open_incidents.json
+data/fenrir.db
+data/fenrir.db-journal
 
 .worktrees/

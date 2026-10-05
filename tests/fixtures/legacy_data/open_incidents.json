@@ -1,0 +1,21 @@
+{
+  "300000000000000005": {
+    "message_id": 300000000000000005,
+    "channel_id": 200000000000000002,
+    "service": "svc-alpha",
+    "author_id": 100000000000000001,
+    "duration_str": "30 minutes",
+    "service_type": "container",
+    "maintenance_type": "security",
+    "started_at": "2099-01-01T10:00:00+00:00"
+  },
+  "300000000000000006": {
+    "message_id": 300000000000000006,
+    "channel_id": 200000000000000002,
+    "service": "stack-beta",
+    "author_id": 100000000000000004,
+    "duration_str": "Inconnue",
+    "service_type": "stack",
+    "maintenance_type": "downtime"
+  }
+}

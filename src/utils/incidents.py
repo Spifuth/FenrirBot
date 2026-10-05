@@ -7,12 +7,12 @@ with no way to close the incident from the message.
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, asdict
+import sqlite3
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-STORE_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "open_incidents.json"
+from . import state_db
 
 
 @dataclass
@@ -28,13 +28,13 @@ class IncidentRecord:
 
 
 class IncidentStore:
-    """A tiny JSON-backed map of message_id -> IncidentRecord."""
+    """message_id -> IncidentRecord, in the open_incidents table of data/fenrir.db."""
 
-    def __init__(self, path: Path = STORE_FILE):
+    def __init__(self, path: Path = state_db.DB_FILE):
         self.path = Path(path)
 
     # An incident closed by any route other than the buttons or /up leaves its
-    # record behind. Without a ceiling the file grows forever and every restart
+    # record behind. Without a ceiling the table grows forever and every restart
     # re-registers enabled buttons on long-dead announcements, where a late
     # click would report a fabricated multi-week duration.
     MAX_AGE = timedelta(days=7)
@@ -50,49 +50,37 @@ class IncidentStore:
             started = started.replace(tzinfo=timezone.utc)
         return (now - started) > self.MAX_AGE
 
+    @staticmethod
+    def _all(conn: sqlite3.Connection) -> list[IncidentRecord]:
+        rows = conn.execute("SELECT * FROM open_incidents ORDER BY message_id").fetchall()
+        return [IncidentRecord(**dict(row)) for row in rows]
+
+    def _prune_stale(self, conn: sqlite3.Connection) -> None:
+        now = datetime.now(timezone.utc)
+        stale = [(r.message_id,) for r in self._all(conn) if self._is_stale(r, now)]
+        conn.executemany("DELETE FROM open_incidents WHERE message_id = ?", stale)
+
     def load(self) -> dict[int, IncidentRecord]:
-        if not self.path.exists():
-            return {}
         try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            # ValueError covers both json.JSONDecodeError and the
-            # UnicodeDecodeError raised by read_text() on invalid UTF-8.
-            return {}
-        if not isinstance(raw, dict):
-            # A file containing e.g. `[]` or `null` decodes fine but has no
-            # .items() -- treat any non-mapping shape as "no incidents".
+            with state_db.connect(self.path) as conn:
+                records = self._all(conn)
+        except sqlite3.Error as e:
+            # Startup revives whatever this returns; an unreadable database
+            # must degrade to "no incidents", as a corrupt JSON file did.
+            print(f"[Incidents] ⚠️ Could not read {self.path}: {e!r}")
             return {}
         now = datetime.now(timezone.utc)
-        out: dict[int, IncidentRecord] = {}
-        for key, value in raw.items():
-            try:
-                record = IncidentRecord(**value)
-            except (TypeError, ValueError):
-                continue
-            if self._is_stale(record, now):
-                continue
-            out[int(key)] = record
-        return out
-
-    def _write(self, data: dict[int, IncidentRecord]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps({str(k): asdict(v) for k, v in data.items()}, indent=2),
-            encoding="utf-8",
-        )
-        tmp.replace(self.path)
+        return {r.message_id: r for r in records if not self._is_stale(r, now)}
 
     def add(self, record: IncidentRecord) -> None:
-        data = self.load()
-        data[record.message_id] = record
-        self._write(data)
+        with state_db.connect(self.path) as conn, state_db.transaction(conn):
+            self._prune_stale(conn)
+            state_db.insert_incident(conn, asdict(record))
 
     def remove(self, message_id: int) -> None:
-        data = self.load()
-        if data.pop(message_id, None) is not None:
-            self._write(data)
+        with state_db.connect(self.path) as conn, state_db.transaction(conn):
+            self._prune_stale(conn)
+            conn.execute("DELETE FROM open_incidents WHERE message_id = ?", (message_id,))
 
     def remove_by_service(self, service: str) -> int:
         """Delete every record whose service matches (case-insensitively).
@@ -101,14 +89,12 @@ class IncidentStore:
         incident's buttons don't get revived with a fabricated duration on
         the next restart. Returns the number of records removed.
         """
-        data = self.load()
         target = service.lower()
-        matching = [mid for mid, rec in data.items() if rec.service.lower() == target]
-        if not matching:
-            return 0
-        for mid in matching:
-            del data[mid]
-        self._write(data)
+        with state_db.connect(self.path) as conn, state_db.transaction(conn):
+            self._prune_stale(conn)
+            # Compared in Python, not SQL: SQLite's lower() only folds ASCII.
+            matching = [(r.message_id,) for r in self._all(conn) if r.service.lower() == target]
+            conn.executemany("DELETE FROM open_incidents WHERE message_id = ?", matching)
         return len(matching)
 
 
