@@ -207,3 +207,36 @@ def test_dashboard_flags_an_unhealthy_container_as_err(monkeypatch):
 
     embed = inter.log.of("followup.send")[0]["embed"]
     assert field(embed, "En cours (1)") == "```\nloki err\n```"
+
+
+def test_dashboard_lists_unhealthy_containers_first_so_the_cap_never_hides_them(monkeypatch):
+    healthy = [_container(f"svc{i:02d}", status="Up 2 hours (healthy)") for i in range(14)]
+    sick = _container("loki", status="Up 1 hour (unhealthy)")
+    cog = _dashboard_cog(monkeypatch, FakeDockerManager(healthy + [sick]))
+    inter = FakeInteraction()
+
+    asyncio.run(DashboardCog.dashboard_slash.callback(cog, inter))
+
+    lines = field(inter.log.of("followup.send")[0]["embed"], "En cours (15)").split("\n")
+    assert lines[1] == "loki err", "the unhealthy container leads the column"
+    assert lines[2:4] == ["svc00 ok", "svc01 ok"], "the rest keep their order"
+    assert lines[-2] == "+3 autres"
+
+
+def test_dashboard_columns_stay_within_discords_1024_char_field_limit(monkeypatch):
+    long = "x" * 150
+    cog = _dashboard_cog(monkeypatch, FakeDockerManager(
+        [_container(f"{long}-run{i:02d}", status="Up 2 hours (healthy)") for i in range(12)]
+        + [_container(f"{long}-stop{i}", state="exited", status="Exited (0)") for i in range(8)]
+    ))
+    inter = FakeInteraction()
+
+    asyncio.run(DashboardCog.dashboard_slash.callback(cog, inter))
+
+    embed = inter.log.of("followup.send")[0]["embed"]
+    for name, total in (("En cours (12)", 12), ("Arrêtés (8)", 8)):
+        value = field(embed, name)
+        assert len(value) <= 1024
+        lines = value.split("\n")[1:-1]
+        shown = len(lines) - 1
+        assert lines[-1] == f"+{total - shown} autres", "hidden lines are still counted"
