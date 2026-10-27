@@ -75,6 +75,20 @@ def _bar(value: float, width: int = 10) -> str:
     return "[" + "█" * filled + "·" * (width - filled) + "]"
 
 
+def _column(lines: list[str], cap: int) -> str:
+    """Code-block field value: at most `cap` lines, then dropped further until it
+    fits Discord's 1024-char field limit; hidden lines are counted in "+N autres"."""
+    shown = min(len(lines), cap)
+    while True:
+        body = lines[:shown]
+        if len(lines) > shown:
+            body = body + [f"+{len(lines) - shown} autres"]
+        value = "```\n" + "\n".join(body) + "\n```"
+        if len(value) <= 1024 or shown == 0:
+            return value
+        shown -= 1
+
+
 def _author_name(author: "discord.User | discord.Member | None") -> str:
     """Footer name for an author that may no longer be resolvable."""
     return author.display_name if author is not None else "inconnu"
@@ -180,8 +194,10 @@ class DashboardEmbed:
         )
 
         if running:
+            # Unhealthy first (stable sort), so the cap can never hide one.
+            ordered = sorted(running, key=lambda c: "unhealthy" not in c.status.lower())
             lines = []
-            for c in running[:12]:
+            for c in ordered:
                 suffix = ""
                 status = c.status.lower()
                 if "unhealthy" in status:
@@ -189,21 +205,16 @@ class DashboardEmbed:
                 elif "healthy" in status:
                     suffix = " ok"
                 lines.append(f"{c.display_name}{suffix}")
-            if len(running) > 12:
-                lines.append(f"+{len(running) - 12} autres")
             embed.add_field(
                 name=f"En cours ({len(running)})",
-                value="```\n" + "\n".join(lines) + "\n```",
+                value=_column(lines, 12),
                 inline=True,
             )
 
         if stopped:
-            lines = [c.display_name for c in stopped[:8]]
-            if len(stopped) > 8:
-                lines.append(f"+{len(stopped) - 8} autres")
             embed.add_field(
                 name=f"Arrêtés ({len(stopped)})",
-                value="```\n" + "\n".join(lines) + "\n```",
+                value=_column([c.display_name for c in stopped], 8),
                 inline=True,
             )
 
